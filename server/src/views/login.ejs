@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta name="theme-color" content="#0f5238">
+	<title>Đăng nhập | SmartIrrigate</title>
+	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+	<style>
+		:root { color-scheme: light; --green: #0f5238; --green-dark: #103b2c; --blue: #006399; --yellow: #f2be55; --ink: #191c1d; --muted: #59645e; --line: #d7dfd9; --paper: #f4f7f4; --error: #a62424; }
+		* { box-sizing: border-box; }
+		body { min-height: 100vh; margin: 0; display: grid; grid-template-columns: minmax(300px, 0.9fr) 1.1fr; background: var(--paper); color: var(--ink); font-family: Inter, sans-serif; }
+		.brand-panel { display: flex; flex-direction: column; justify-content: space-between; padding: 42px clamp(28px, 6vw, 84px); background: var(--green-dark); color: white; }
+		.brand { display: flex; align-items: center; gap: 12px; font-size: 19px; font-weight: 700; }
+		.brand-mark { width: 42px; height: 42px; display: grid; place-items: center; border: 1px solid rgba(255,255,255,.4); border-radius: 12px; color: var(--yellow); font-size: 23px; }
+		.brand-copy { max-width: 420px; margin: auto 0; padding: 48px 0; }
+		.brand-copy .eyebrow { color: #a8e7c5; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .12em; }
+		.brand-copy h1 { margin: 16px 0; font-size: clamp(34px, 4vw, 54px); line-height: 1.08; }
+		.brand-copy p { max-width: 360px; color: #d0dfd5; font-size: 16px; line-height: 1.7; }
+		.brand-footer { color: #b8c9be; font-size: 12px; }
+		.form-panel { display: grid; place-items: center; padding: 32px 24px; }
+		.form-wrap { width: min(100%, 420px); animation: rise .4s ease both; }
+		.form-wrap h2 { margin: 0 0 8px; font-size: 30px; }
+		.form-intro { margin: 0 0 30px; color: var(--muted); font-size: 14px; line-height: 1.6; }
+		.field { display: grid; gap: 8px; margin-bottom: 18px; }
+		label { font-size: 13px; font-weight: 600; }
+		input { width: 100%; height: 48px; padding: 0 14px; border: 1px solid var(--line); border-radius: 6px; background: white; color: var(--ink); font: inherit; }
+		input:focus { outline: 3px solid rgba(0,99,153,.15); border-color: var(--blue); }
+		.submit { width: 100%; height: 48px; margin-top: 8px; border: 0; border-radius: 6px; background: var(--green); color: white; font: inherit; font-weight: 700; cursor: pointer; }
+		.submit:hover { background: #174a36; }
+		.submit:disabled { opacity: .65; cursor: wait; }
+		.message { min-height: 22px; margin: 14px 0 0; color: var(--error); font-size: 13px; }
+		.switch-page { margin-top: 22px; color: var(--muted); font-size: 14px; text-align: center; }
+		a { color: var(--blue); font-weight: 600; text-decoration: none; }
+		a:hover { text-decoration: underline; }
+		@keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+		@media (max-width: 760px) { body { grid-template-columns: 1fr; } .brand-panel { min-height: 210px; padding: 24px; } .brand-copy { padding: 30px 0 14px; } .brand-copy h1 { max-width: 500px; font-size: 34px; } .brand-copy p, .brand-footer { display: none; } .form-panel { align-items: start; padding-top: 40px; } }
+		@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; } }
+	</style>
+</head>
+<body>
+	<aside class="brand-panel">
+		<div class="brand"><span class="brand-mark">S</span><span>SmartIrrigate</span></div>
+		<div class="brand-copy">
+			<span class="eyebrow">Quản lý khu vườn</span>
+			<h1>Chăm vườn thông minh, bắt đầu từ đây.</h1>
+			<p>Theo dõi cảm biến và thiết bị tưới của bạn trong một giao diện thống nhất.</p>
+		</div>
+		<div class="brand-footer">SmartIrrigate · Hệ thống tưới cây IoT</div>
+	</aside>
+	<main class="form-panel">
+		<form class="form-wrap" id="login-form">
+			<h2>Chào mừng trở lại</h2>
+			<p class="form-intro">Đăng nhập để tiếp tục quản lý khu vườn của bạn.</p>
+			<div class="field"><label for="username">Tên đăng nhập</label><input id="username" name="username" autocomplete="username" required minlength="3" maxlength="40" autofocus></div>
+			<div class="field"><label for="password">Mật khẩu</label><input id="password" name="password" type="password" autocomplete="current-password" required></div>
+			<button class="submit" type="submit">Đăng nhập</button>
+			<p class="message" id="form-message" role="alert"></p>
+			<p class="switch-page">Chưa có tài khoản? <a href="/register">Tạo tài khoản</a></p>
+		</form>
+	</main>
+	<script>
+		const form = document.getElementById('login-form');
+		const message = document.getElementById('form-message');
+		form.addEventListener('submit', async event => {
+			event.preventDefault();
+			const button = form.querySelector('button[type="submit"]');
+			button.disabled = true;
+			message.textContent = '';
+			try {
+				const response = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.fromEntries(new FormData(form))) });
+				const result = await response.json();
+				if (!response.ok) throw new Error(result.error || 'Không thể đăng nhập.');
+				window.location.assign('/');
+			} catch (error) {
+				message.textContent = error.message;
+				button.disabled = false;
+			}
+		});
+	</script>
+</body>
+</html>

@@ -1,0 +1,2447 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartIrrigate - Dashboard</title>
+    <meta name="description" content="Hệ thống quản lý tưới cây thông minh IoT - theo dõi cảm biến, điều khiển thiết bị thời gian thực.">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+    <style>
+        /* ============================================
+           AgroPulse Design System — Light Mode
+           Based on Material Design 3 + Eco-Tech
+           ============================================ */
+
+        :root {
+            /* Surfaces */
+            --surface: #f8f9fa;
+            --surface-dim: #d9dadb;
+            --surface-bright: #f8f9fa;
+            --surface-container-lowest: #ffffff;
+            --surface-container-low: #f3f4f5;
+            --surface-container: #edeeef;
+            --surface-container-high: #e7e8e9;
+            --surface-container-highest: #e1e3e4;
+
+            /* On Surface */
+            --on-surface: #191c1d;
+            --on-surface-variant: #404943;
+            --inverse-surface: #2e3132;
+            --inverse-on-surface: #f0f1f2;
+
+            /* Outline */
+            --outline: #707973;
+            --outline-variant: #bfc9c1;
+
+            /* Primary — Leaf Green */
+            --primary: #0f5238;
+            --on-primary: #ffffff;
+            --primary-container: #2d6a4f;
+            --on-primary-container: #a8e7c5;
+            --inverse-primary: #95d4b3;
+            --primary-fixed: #b1f0ce;
+
+            /* Secondary — Water Blue */
+            --secondary: #006399;
+            --on-secondary: #ffffff;
+            --secondary-container: #67bafd;
+            --on-secondary-container: #004972;
+            --secondary-fixed: #cde5ff;
+
+            /* Tertiary — Sunlight Yellow */
+            --tertiary: #5f4200;
+            --on-tertiary: #ffffff;
+            --tertiary-container: #7e5800;
+            --on-tertiary-container: #ffd388;
+            --tertiary-fixed: #ffdea9;
+
+            /* Error */
+            --error: #ba1a1a;
+            --on-error: #ffffff;
+            --error-container: #ffdad6;
+            --on-error-container: #93000a;
+
+            /* Elevation Shadows */
+            --shadow-1: 0px 4px 20px rgba(0, 0, 0, 0.04);
+            --shadow-2: 0px 12px 32px rgba(0, 0, 0, 0.08);
+
+            /* Layout */
+            --sidebar-width: 280px;
+            --max-content: 1440px;
+            --gutter: 24px;
+            --radius-sm: 0.5rem;
+            --radius-md: 1rem;
+            --radius-lg: 1.5rem;
+            --radius-full: 9999px;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: var(--surface);
+            color: var(--on-surface);
+            min-height: 100vh;
+            display: flex;
+        }
+
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 1;
+            vertical-align: middle;
+        }
+
+        /* ============================================
+           SIDEBAR NAVIGATION
+           ============================================ */
+        .sidebar {
+            position: fixed;
+            left: 0; top: 0;
+            width: var(--sidebar-width);
+            height: 100vh;
+            background: var(--surface-container-lowest);
+            border-right: 1px solid var(--outline-variant);
+            box-shadow: 2px 0 8px rgba(0,0,0,0.02);
+            display: flex;
+            flex-direction: column;
+            padding: 24px 16px;
+            z-index: 20;
+        }
+
+        .sidebar-brand {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 32px;
+        }
+
+        .sidebar-logo {
+            width: 48px; height: 48px;
+            border-radius: var(--radius-sm);
+            background: transparent;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .sidebar-logo .material-symbols-outlined {
+            font-size: 28px;
+            color: var(--on-primary);
+        }
+
+        .sidebar-brand-text h1 {
+            font-size: 20px;
+            font-weight: 600;
+            line-height: 28px;
+            color: var(--primary);
+        }
+
+        .sidebar-brand-text p {
+            font-size: 14px;
+            line-height: 20px;
+            color: var(--on-surface-variant);
+        }
+
+        .sidebar-nav {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            flex: 1;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 8px 16px;
+            border-radius: var(--radius-sm);
+            text-decoration: none;
+            font-size: 16px;
+            line-height: 24px;
+            color: var(--on-surface-variant);
+            transition: all 0.2s ease;
+            cursor: pointer;
+        }
+
+        .nav-item:hover {
+            background: var(--surface-container-high);
+        }
+
+        .nav-item.active {
+            background: var(--primary);
+            color: var(--on-primary);
+            font-weight: 600;
+            transform: scale(0.98);
+        }
+
+        .nav-item .material-symbols-outlined {
+            font-size: 24px;
+        }
+
+        .sidebar-action-btn {
+            width: 100%;
+            padding: 10px 16px;
+            border: none;
+            border-radius: var(--radius-full);
+            background: var(--primary);
+            color: var(--on-primary);
+            font-family: 'Inter', sans-serif;
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            cursor: pointer;
+            margin-top: 24px;
+            transition: all 0.2s;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+        }
+
+        .sidebar-action-btn:hover {
+            background: var(--primary-container);
+            color: var(--on-primary-container);
+        }
+
+        .sidebar-footer {
+            margin-top: auto;
+            border-top: 1px solid var(--outline-variant);
+            padding-top: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        /* ============================================
+           MAIN CONTENT
+           ============================================ */
+        .main-content {
+            flex: 1;
+            margin-left: var(--sidebar-width);
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        /* Top App Bar */
+        .top-bar {
+            position: sticky; top: 0; z-index: 10;
+            background: var(--surface-bright);
+            border-bottom: 1px solid var(--outline-variant);
+            box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+        }
+
+        .top-bar-inner {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 var(--gutter);
+            height: 64px;
+            max-width: var(--max-content);
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        .top-bar-title {
+            font-size: 24px;
+            font-weight: 600;
+            line-height: 32px;
+            color: var(--primary);
+        }
+
+        .top-bar-actions {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .icon-btn {
+            position: relative;
+            width: 40px; height: 40px;
+            border-radius: var(--radius-full);
+            border: none;
+            background: transparent;
+            color: var(--on-surface-variant);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s;
+        }
+
+        .icon-btn:hover {
+            background: var(--surface-container-low);
+        }
+
+        .notification-dot {
+            position: absolute;
+            top: 6px; right: 6px;
+            width: 10px; height: 10px;
+            border-radius: 50%;
+            background: var(--error);
+            border: 2px solid var(--surface);
+        }
+
+        .avatar {
+            width: 40px; height: 40px;
+            border-radius: 50%;
+            background: var(--surface-container-highest);
+            border: 1px solid var(--outline-variant);
+            cursor: pointer;
+            overflow: hidden;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--primary);
+        }
+
+        .avatar:hover {
+            box-shadow: 0 0 0 2px var(--primary);
+        }
+
+        .account-menu { position: relative; }
+        .account-dropdown {
+            position: absolute;
+            top: calc(100% + 10px);
+            right: 0;
+            z-index: 30;
+            width: 240px;
+            padding: 6px;
+            border: 1px solid var(--outline-variant);
+            border-radius: var(--radius-sm);
+            background: var(--surface-container-lowest);
+            box-shadow: var(--shadow-2);
+        }
+        .account-dropdown[hidden] { display: none; }
+        .account-dropdown-head { padding: 10px 12px; border-bottom: 1px solid var(--outline-variant); }
+        .account-dropdown-head strong { display: block; overflow: hidden; color: var(--on-surface); font-size: 14px; text-overflow: ellipsis; }
+        .account-dropdown-head span { display: block; margin-top: 3px; color: var(--on-surface-variant); font-size: 12px; }
+        .account-menu-item {
+            display: flex;
+            width: 100%;
+            align-items: center;
+            gap: 12px;
+            padding: 11px 12px;
+            border: 0;
+            border-radius: 4px;
+            background: transparent;
+            color: var(--on-surface);
+            font: inherit;
+            font-size: 14px;
+            text-align: left;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        .account-menu-item:hover, .account-menu-item:focus-visible { background: var(--surface-container-low); outline: none; }
+        .account-menu-item .material-symbols-outlined { color: var(--on-surface-variant); font-size: 20px; }
+        .account-menu-item.logout { color: var(--error); }
+        .account-menu-item.logout .material-symbols-outlined { color: var(--error); }
+        .profile-details { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; width: 100%; }
+        .profile-details div { min-width: 0; }
+        .profile-details dt { margin-bottom: 5px; color: var(--on-surface-variant); font-size: 12px; }
+        .profile-details dd { overflow-wrap: anywhere; color: var(--on-surface); font-size: 15px; font-weight: 600; }
+
+        /* View Sections */
+        .view-section {
+            display: none;
+            padding: var(--gutter);
+            max-width: var(--max-content);
+            margin: 0 auto;
+            width: 100%;
+            flex: 1;
+            flex-direction: column;
+            gap: var(--gutter);
+            animation: fadeIn 0.3s ease;
+        }
+
+        .view-section.active {
+            display: flex;
+        }
+
+        .manage-toolbar, .manage-heading, .telemetry-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+        }
+
+        .manage-heading h2, .manage-heading h3 { color: var(--on-surface); }
+        .manage-heading p, .manage-hint { color: var(--on-surface-variant); font-size: 14px; }
+        .manage-action {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            min-height: 40px;
+            border: 1px solid var(--primary);
+            border-radius: var(--radius-sm);
+            padding: 8px 14px;
+            background: var(--primary);
+            color: var(--on-primary);
+            font: inherit;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .manage-action.secondary { background: transparent; color: var(--primary); }
+        .manage-action.danger { border-color: var(--error); background: var(--error); }
+        .manage-action.small { min-height: 32px; padding: 4px 9px; font-size: 13px; }
+        .manage-actions { display: flex; gap: 8px; white-space: nowrap; }
+        .manage-table-wrap { width: 100%; overflow-x: auto; }
+        .manage-table { width: 100%; border-collapse: collapse; font-size: 14px; text-align: left; }
+        .manage-table th, .manage-table td { padding: 12px 14px; border-bottom: 1px solid var(--outline-variant); white-space: nowrap; }
+        .manage-table th { color: var(--on-surface-variant); font-size: 12px; font-weight: 600; background: var(--surface-container-low); }
+        .manage-table td { color: var(--on-surface); }
+        .manage-empty { padding: 24px !important; color: var(--outline) !important; text-align: center; }
+        .manage-status { min-height: 20px; color: var(--on-surface-variant); font-size: 14px; }
+        .manage-status.error { color: var(--error); }
+        .manage-status.success { color: var(--primary); }
+        .manage-select, .manage-input {
+            width: 100%;
+            min-height: 42px;
+            border: 1px solid var(--outline-variant);
+            border-radius: var(--radius-sm);
+            padding: 9px 11px;
+            background: var(--surface-container-lowest);
+            color: var(--on-surface);
+            font: inherit;
+        }
+        .telemetry-toolbar { justify-content: flex-start; flex-wrap: wrap; margin-bottom: 16px; }
+        .telemetry-toolbar label { display: flex; align-items: center; gap: 10px; color: var(--on-surface-variant); font-size: 14px; }
+        .telemetry-toolbar .manage-select { width: auto; min-width: 200px; }
+        .live-indicator { display: inline-flex; align-items: center; gap: 8px; color: var(--on-surface-variant); font-size: 13px; }
+        .live-indicator::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--outline); }
+        .live-indicator.connected::before { background: var(--primary); box-shadow: 0 0 0 3px rgba(15, 82, 56, 0.12); }
+        .manage-dialog { width: min(620px, calc(100% - 32px)); max-height: calc(100vh - 32px); margin: auto; padding: 0; border: 1px solid var(--outline-variant); border-radius: var(--radius-md); color: var(--on-surface); box-shadow: var(--shadow-2); }
+        .manage-dialog::backdrop { background: rgba(25, 28, 29, 0.42); }
+        .manage-dialog form { display: flex; flex-direction: column; max-height: calc(100vh - 32px); }
+        .manage-dialog-header, .manage-dialog-footer { padding: 18px 22px; border-bottom: 1px solid var(--outline-variant); }
+        .manage-dialog-header h3 { font-size: 20px; }
+        .manage-dialog-body { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; overflow-y: auto; padding: 20px 22px; }
+        .manage-field { display: flex; flex-direction: column; gap: 6px; }
+        .manage-field.full { grid-column: 1 / -1; }
+        .manage-field label { color: var(--on-surface-variant); font-size: 13px; font-weight: 600; }
+        .manage-dialog-footer { display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid var(--outline-variant); border-bottom: 0; }
+        .sensor-picker-dialog { width: min(860px, calc(100% - 32px)); }
+        .sensor-picker-body { display: block; }
+        .sensor-picker-summary { margin-bottom: 14px; color: var(--on-surface-variant); font-size: 14px; }
+        @media (max-width: 600px) {
+            .manage-toolbar, .manage-heading { align-items: flex-start; flex-direction: column; }
+            .manage-dialog-body { grid-template-columns: 1fr; }
+            .manage-field.full { grid-column: auto; }
+            .telemetry-toolbar { align-items: flex-start; flex-direction: column; }
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ============================================
+           PREMIUM FOOTER
+           ============================================ */
+        .premium-footer {
+            background: var(--surface-container-low);
+            border-top: 1px solid var(--outline-variant);
+            margin-top: auto;
+            padding: 40px var(--gutter) 20px;
+            color: var(--on-surface-variant);
+        }
+        
+        .footer-grid {
+            max-width: var(--max-content);
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr;
+            gap: 40px;
+            margin-bottom: 40px;
+        }
+        
+        .footer-brand p {
+            font-size: 14px;
+            line-height: 22px;
+            max-width: 300px;
+        }
+        
+        .footer-links h4, .footer-status h4 {
+            color: var(--on-surface);
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 16px;
+        }
+        
+        .footer-links a {
+            display: block;
+            color: var(--on-surface-variant);
+            text-decoration: none;
+            font-size: 14px;
+            margin-bottom: 12px;
+            transition: color 0.2s;
+        }
+        
+        .footer-links a:hover {
+            color: var(--primary);
+        }
+        
+        .footer-status {
+            font-size: 14px;
+        }
+        
+        .status-dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        
+        .status-dot.online { background: var(--primary); box-shadow: 0 0 8px var(--primary); }
+        .status-dot.offline { background: var(--error); box-shadow: 0 0 8px var(--error); }
+        
+        .footer-bottom {
+            max-width: var(--max-content);
+            margin: 0 auto;
+            padding-top: 20px;
+            border-top: 1px solid var(--outline-variant);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 12px;
+        }
+        
+        .footer-bottom a {
+            color: var(--on-surface-variant);
+            text-decoration: none;
+        }
+        
+        .footer-bottom a:hover { color: var(--primary); }
+        
+        @media (max-width: 768px) {
+            .footer-grid { grid-template-columns: 1fr; gap: 24px; }
+            .footer-bottom { flex-direction: column; gap: 12px; text-align: center; }
+        }
+
+        /* ============================================
+           CARDS
+           ============================================ */
+        .card {
+            background: var(--surface-container-lowest);
+            border-radius: var(--radius-md);
+            padding: 24px;
+            box-shadow: var(--shadow-1);
+            border: 1px solid var(--outline-variant);
+            transition: box-shadow 0.3s ease;
+        }
+
+        .card:hover {
+            box-shadow: var(--shadow-2);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 16px;
+        }
+
+        .card-title-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .card-title-group .material-symbols-outlined {
+            color: var(--on-surface-variant);
+        }
+
+        .card-title {
+            font-size: 20px;
+            font-weight: 600;
+            line-height: 28px;
+            color: var(--on-surface);
+        }
+
+        .card-menu-btn {
+            background: none;
+            border: none;
+            color: var(--outline);
+            cursor: pointer;
+            padding: 4px;
+            border-radius: var(--radius-full);
+        }
+
+        .card-menu-btn:hover {
+            background: var(--surface-container-high);
+        }
+
+        /* Hero Card — Soil Moisture */
+        .hero-card {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 24px;
+        }
+
+        .hero-left {
+            display: flex;
+            align-items: center;
+            gap: 24px;
+        }
+
+        .hero-icon {
+            width: 64px; height: 64px;
+            border-radius: 50%;
+            background: var(--secondary-container);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .hero-icon .material-symbols-outlined {
+            font-size: 36px;
+            color: var(--on-secondary-container);
+        }
+
+        .hero-value-group h3 {
+            font-size: 20px;
+            font-weight: 600;
+            color: var(--on-surface);
+            margin-bottom: 4px;
+        }
+
+        .hero-value {
+            font-size: 48px;
+            font-weight: 700;
+            line-height: 56px;
+            letter-spacing: -0.02em;
+            color: var(--primary);
+            font-variant-numeric: tabular-nums;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 12px;
+            border-radius: var(--radius-full);
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            margin-left: 8px;
+            vertical-align: middle;
+        }
+
+        .status-badge.standby {
+            background: var(--surface-container);
+            color: var(--on-surface-variant);
+        }
+
+        .status-badge.active {
+            background: var(--primary-fixed);
+            color: var(--primary);
+        }
+
+        .status-badge.error {
+            background: var(--error-container);
+            color: var(--on-error-container);
+        }
+
+        /* Toggle Switch — Material Design */
+        .toggle-group {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 16px;
+            background: var(--surface);
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--outline-variant);
+        }
+
+        .toggle-label {
+            font-size: 16px;
+            line-height: 24px;
+            color: var(--on-surface-variant);
+        }
+
+        .md-switch {
+            position: relative;
+            width: 44px; height: 24px;
+            cursor: pointer;
+            display: inline-block;
+        }
+
+        .md-switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+
+        .md-switch .track {
+            position: absolute; inset: 0;
+            background: var(--surface-container-highest);
+            border-radius: var(--radius-full);
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .md-switch .track::before {
+            content: '';
+            position: absolute;
+            left: 2px; top: 2px;
+            width: 20px; height: 20px;
+            background: white;
+            border-radius: 50%;
+            border: 1px solid rgba(0,0,0,0.08);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.12);
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .md-switch input:checked + .track {
+            background: var(--primary);
+        }
+
+        .md-switch input:checked + .track::before {
+            transform: translateX(20px);
+        }
+
+        /* Grid Section */
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: var(--gutter);
+        }
+
+        /* Climate Card */
+        .climate-values {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            margin-bottom: 24px;
+        }
+
+        .climate-item label {
+            font-size: 14px;
+            line-height: 20px;
+            color: var(--on-surface-variant);
+            margin-bottom: 4px;
+            display: block;
+        }
+
+        .climate-item .value {
+            font-size: 32px;
+            font-weight: 600;
+            line-height: 40px;
+            letter-spacing: -0.01em;
+            color: var(--on-surface);
+            font-variant-numeric: tabular-nums;
+        }
+
+        .climate-item.right {
+            text-align: right;
+        }
+
+        .alert-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            border-radius: var(--radius-full);
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+        }
+
+        .alert-chip.warning {
+            background: var(--error-container);
+            color: var(--on-error-container);
+        }
+
+        .alert-chip.info {
+            background: var(--primary-fixed);
+            color: var(--primary);
+        }
+
+        .alert-chip.caution {
+            background: var(--tertiary-fixed);
+            color: var(--tertiary);
+        }
+
+        .alert-chip .material-symbols-outlined {
+            font-size: 16px;
+        }
+
+        /* Lighting Card */
+        .light-value {
+            margin-bottom: 24px;
+        }
+
+        .light-value label {
+            font-size: 14px;
+            line-height: 20px;
+            color: var(--on-surface-variant);
+            margin-bottom: 4px;
+            display: block;
+        }
+
+        .light-value .value {
+            font-size: 32px;
+            font-weight: 600;
+            line-height: 40px;
+            color: var(--on-surface);
+            font-variant-numeric: tabular-nums;
+        }
+
+        .light-value .unit {
+            font-size: 16px;
+            font-weight: 400;
+            color: var(--outline);
+        }
+
+        .grow-led-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 16px;
+            background: var(--surface);
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--outline-variant);
+        }
+
+        .grow-led-left {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .grow-led-left .material-symbols-outlined {
+            color: var(--primary);
+        }
+
+        .grow-led-left span.label {
+            font-size: 16px;
+            color: var(--on-surface-variant);
+        }
+
+        .auto-badge {
+            display: inline-flex;
+            padding: 2px 8px;
+            border-radius: var(--radius-full);
+            background: var(--primary-container);
+            color: var(--on-primary-container);
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+        }
+
+        /* Water Tank Card — Error State */
+        .tank-card {
+            background: var(--error-container);
+            border-color: rgba(186, 26, 26, 0.3);
+        }
+
+        .tank-card.normal {
+            background: var(--surface-container-lowest);
+            border-color: var(--outline-variant);
+        }
+
+        .tank-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .tank-title-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .tank-title-group .material-symbols-outlined {
+            color: var(--error);
+        }
+
+        .tank-card.normal .tank-title-group .material-symbols-outlined {
+            color: var(--secondary);
+        }
+
+        .tank-title {
+            font-size: 20px;
+            font-weight: 600;
+            line-height: 28px;
+            color: var(--on-error-container);
+        }
+
+        .tank-card.normal .tank-title {
+            color: var(--on-surface);
+        }
+
+        .tank-level {
+            font-size: 24px;
+            font-weight: 600;
+            line-height: 32px;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .tank-level.error { color: var(--error); }
+        .tank-level.warning { color: var(--tertiary); }
+        .tank-level.ok { color: var(--primary); }
+
+        /* Progress Track */
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: var(--surface-container-highest);
+            border-radius: var(--radius-full);
+            overflow: hidden;
+            margin-bottom: 16px;
+        }
+
+        .progress-bar .fill {
+            height: 100%;
+            border-radius: var(--radius-full);
+            transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+            background: var(--secondary);
+        }
+
+        .progress-bar .fill.error { background: var(--error); }
+        .progress-bar .fill.warning { background: var(--tertiary); }
+
+        .tank-warning {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            border-radius: var(--radius-sm);
+            background: rgba(255,255,255,0.5);
+            font-size: 14px;
+            line-height: 20px;
+            color: var(--error);
+        }
+
+        .tank-warning .material-symbols-outlined {
+            font-size: 20px;
+        }
+
+        .tank-card.normal .tank-warning {
+            background: var(--surface-container-low);
+            color: var(--on-surface-variant);
+        }
+
+        /* ============================================
+           SIMULATION PANEL
+           ============================================ */
+        .sim-panel {
+            background: var(--surface-container-lowest);
+            border-radius: var(--radius-md);
+            padding: 24px;
+            box-shadow: var(--shadow-1);
+            border: 1px solid var(--outline-variant);
+        }
+
+        .sim-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            cursor: pointer;
+        }
+
+        .sim-title-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .sim-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: var(--on-surface);
+        }
+
+        .sim-title-group .material-symbols-outlined {
+            color: var(--tertiary);
+        }
+
+        .sim-badge {
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            padding: 4px 10px;
+            border-radius: var(--radius-full);
+            background: var(--tertiary-fixed);
+            color: var(--tertiary);
+        }
+
+        .sim-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .sim-slider-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .sim-slider-group.full-width {
+            grid-column: 1 / -1;
+        }
+
+        .sim-slider-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .sim-slider-label {
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--on-surface-variant);
+        }
+
+        .sim-slider-val {
+            font-size: 14px;
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+            color: var(--on-surface);
+        }
+
+        /* Range Input — Material Style */
+        input[type=range] {
+            width: 100%;
+            appearance: none;
+            background: transparent;
+            cursor: pointer;
+            height: 24px;
+        }
+
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            background: var(--surface-container-highest);
+            border-radius: var(--radius-full);
+        }
+
+        input[type=range]::-webkit-slider-thumb {
+            appearance: none;
+            width: 20px; height: 20px;
+            border-radius: 50%;
+            background: var(--primary);
+            margin-top: -8px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+            transition: transform 0.15s;
+        }
+
+        input[type=range]::-webkit-slider-thumb:hover {
+            transform: scale(1.15);
+            box-shadow: 0 0 0 8px rgba(15, 82, 56, 0.08);
+        }
+
+        input[type=range].secondary::-webkit-slider-thumb { background: var(--secondary); }
+        input[type=range].tertiary::-webkit-slider-thumb { background: var(--tertiary-container); }
+        input[type=range].error::-webkit-slider-thumb { background: var(--error); }
+
+        /* ============================================
+           MODE BAR
+           ============================================ */
+        .mode-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            border-radius: var(--radius-full);
+            background: var(--surface-container);
+            font-size: 14px;
+            color: var(--on-surface-variant);
+        }
+
+        .mode-bar .mode-text {
+            font-weight: 600;
+            color: var(--primary);
+        }
+
+        /* ============================================
+           RESPONSIVE
+           ============================================ */
+        @media (max-width: 900px) {
+            .sidebar { display: none; }
+            .main-content { margin-left: 0; }
+            .grid-2 { grid-template-columns: 1fr; }
+            .sim-grid { grid-template-columns: 1fr; }
+            .hero-card { flex-direction: column; align-items: flex-start; }
+            .mobile-menu-btn { display: block !important; }
+        }
+
+        .mobile-menu-btn { display: none; }
+    </style>
+</head>
+<body>
+
+    <!-- ============ SIDEBAR ============ -->
+    <nav class="sidebar" id="sidebar">
+        <div class="sidebar-brand">
+            <div class="sidebar-logo">
+                <img src="./logo1.png" alt="Logo" style="width: 100%; height: 100%; object-fit: cover;">
+            </div>
+            <div class="sidebar-brand-text">
+                <h1>SmartIrrigate</h1>
+                <p id="sidebar-status">Đang hoạt động</p>
+            </div>
+        </div>
+
+        <div class="sidebar-nav">
+            <a class="nav-item active" href="#" data-target="view-dashboard">
+                <span class="material-symbols-outlined">dashboard</span>
+                <span>Bảng điều khiển</span>
+            </a>
+            <a class="nav-item" href="#" data-target="view-sensors">
+                <span class="material-symbols-outlined">sensors</span>
+                <span>Cảm biến</span>
+            </a>
+            <a class="nav-item" href="#" data-target="view-controls">
+                <span class="material-symbols-outlined">settings_remote</span>
+                <span>Điều khiển</span>
+            </a>
+            <a class="nav-item" href="#" data-target="view-schedules">
+                <span class="material-symbols-outlined">calendar_today</span>
+                <span>Lịch trình</span>
+            </a>
+            <a class="nav-item" href="#" data-target="view-analytics">
+                <span class="material-symbols-outlined">bar_chart</span>
+                <span>Thống kê</span>
+            </a>
+            <a class="nav-item" href="#" data-target="view-logs">
+                <span class="material-symbols-outlined">receipt_long</span>
+                <span>Nhật ký</span>
+            </a>
+            <a class="nav-item" href="#" data-target="view-management">
+                <span class="material-symbols-outlined">inventory_2</span>
+                <span>Quản lý</span>
+            </a>
+            <a class="nav-item" href="#" data-target="view-settings">
+                <span class="material-symbols-outlined">settings_suggest</span>
+                <span>Cài đặt</span>
+            </a>
+
+            <button class="sidebar-action-btn" id="btn-harvest">Thu hoạch nhanh</button>
+        </div>
+
+        <div class="sidebar-footer">
+            <a class="nav-item" href="#">
+                <span class="material-symbols-outlined">help</span>
+                <span>Hỗ trợ</span>
+            </a>
+            <a class="nav-item" href="#">
+                <span class="material-symbols-outlined">settings</span>
+                <span>Cài đặt</span>
+            </a>
+        </div>
+    </nav>
+
+    <!-- ============ MAIN ============ -->
+    <main class="main-content">
+        <!-- Top App Bar -->
+        <header class="top-bar">
+            <div class="top-bar-inner">
+                <div style="display:flex;align-items:center;gap:16px;">
+                    <button class="icon-btn mobile-menu-btn" id="menu-btn">
+                        <span class="material-symbols-outlined">menu</span>
+                    </button>
+                    <h2 class="top-bar-title">Khu vườn của tôi</h2>
+                </div>
+                <div class="top-bar-actions">
+                    <div class="mode-bar">
+                        <span class="material-symbols-outlined" style="font-size:18px;">smart_toy</span>
+                        <span id="mode-label" class="mode-text">Tự động</span>
+                        <label class="md-switch">
+                            <input type="checkbox" id="mode-switch" checked>
+                            <span class="track"></span>
+                        </label>
+                    </div>
+                    <button class="icon-btn" id="notif-btn">
+                        <span class="material-symbols-outlined">notifications</span>
+                        <span class="notification-dot" id="notif-dot"></span>
+                    </button>
+                    <div class="account-menu" id="account-menu">
+                        <button class="avatar" id="account-menu-toggle" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="account-dropdown" title="Tài khoản">KT</button>
+                        <div class="account-dropdown" id="account-dropdown" role="menu" hidden>
+                            <div class="account-dropdown-head">
+                                <strong id="account-menu-username">Tài khoản</strong>
+                                <span>Đang đăng nhập</span>
+                            </div>
+                            <button class="account-menu-item" type="button" role="menuitem" data-account-action="profile">
+                                <span class="material-symbols-outlined">person</span>Thông tin cá nhân
+                            </button>
+                            <form action="/api/auth/logout" method="post">
+                                <button class="account-menu-item logout" type="submit" role="menuitem">
+                                    <span class="material-symbols-outlined">logout</span>Đăng xuất
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Dashboard Canvas -->
+        <div class="view-section active" id="view-dashboard">
+
+            <!-- ===== HERO: Soil Moisture ===== -->
+            <div class="card hero-card" id="card-soil">
+                <div class="hero-left">
+                    <div class="hero-icon">
+                        <span class="material-symbols-outlined">water_drop</span>
+                    </div>
+                    <div class="hero-value-group">
+                        <h3>Độ ẩm Đất</h3>
+                        <div>
+                            <span class="hero-value" id="v-soil">50</span><span class="hero-value" style="font-size:32px">%</span>
+                            <span class="status-badge standby" id="soil-badge">Chế độ chờ</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="toggle-group">
+                    <span class="toggle-label">Bật/tắt Máy bơm</span>
+                    <label class="md-switch">
+                        <input type="checkbox" id="sw-pump">
+                        <span class="track"></span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- ===== GRID: Climate + Lighting ===== -->
+            <div class="grid-2">
+                <!-- Climate -->
+                <div class="card" id="card-climate">
+                    <div class="card-header">
+                        <div class="card-title-group">
+                            <span class="material-symbols-outlined">thermostat</span>
+                            <h4 class="card-title">Khí hậu (DHT22)</h4>
+                        </div>
+                        <button class="card-menu-btn"><span class="material-symbols-outlined">more_vert</span></button>
+                    </div>
+                    <div class="climate-values">
+                        <div class="climate-item">
+                            <label>Nhiệt độ</label>
+                            <span class="value" id="v-temp">25°C</span>
+                        </div>
+                        <div class="climate-item right">
+                            <label>Độ ẩm</label>
+                            <span class="value" id="v-hum">60%</span>
+                        </div>
+                    </div>
+                    <div id="climate-chip"></div>
+                </div>
+
+                <!-- Lighting -->
+                <div class="card" id="card-light">
+                    <div class="card-header">
+                        <div class="card-title-group">
+                            <span class="material-symbols-outlined">light_mode</span>
+                            <h4 class="card-title">Ánh sáng (LDR)</h4>
+                        </div>
+                        <button class="card-menu-btn"><span class="material-symbols-outlined">more_vert</span></button>
+                    </div>
+                    <div class="light-value">
+                        <label>Cường độ sáng</label>
+                        <span class="value" id="v-light">500</span> <span class="unit">Lux</span>
+                    </div>
+                    <div class="grow-led-row">
+                        <div class="grow-led-left">
+                            <span class="material-symbols-outlined">emoji_objects</span>
+                            <span class="label">Đèn quang hợp</span>
+                            <span class="auto-badge" id="led-auto-badge">Tự động</span>
+                        </div>
+                        <label class="md-switch">
+                            <input type="checkbox" id="sw-led">
+                            <span class="track"></span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ===== Water Tank ===== -->
+            <div class="card tank-card" id="card-tank">
+                <div class="tank-header">
+                    <div class="tank-title-group">
+                        <span class="material-symbols-outlined" id="tank-icon">water_lock</span>
+                        <h4 class="tank-title" id="tank-title-text">Mực nước Bể chứa</h4>
+                    </div>
+                    <span class="tank-level error" id="v-water-display">80%</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="fill" id="bar-water" style="width:80%"></div>
+                </div>
+                <div class="tank-warning" id="tank-msg">
+                    <span class="material-symbols-outlined">check_circle</span>
+                    <span>Mực nước đầy đủ. Hệ thống hoạt động bình thường.</span>
+                </div>
+            </div>
+
+            <section class="card">
+                <div class="card-header">
+                    <div class="card-title-group">
+                        <span class="material-symbols-outlined">show_chart</span>
+                        <h3 class="card-title">Lịch sử cảm biến</h3>
+                    </div>
+                    <span class="manage-hint">50 bản ghi mới nhất</span>
+                </div>
+                <div style="height: 320px; position: relative;">
+                    <canvas id="telemetryChart" aria-label="Biểu đồ độ ẩm đất, độ ẩm không khí và nhiệt độ"></canvas>
+                </div>
+            </section>
+
+            <section class="card">
+                <div class="manage-toolbar" style="margin-bottom: 16px;">
+                    <div class="card-title-group">
+                        <span class="material-symbols-outlined">yard</span>
+                        <h3 class="card-title">Cây</h3>
+                    </div>
+                    <button class="manage-action" type="button" data-action="new-asset">
+                        <span class="material-symbols-outlined">add</span> Thêm cây
+                    </button>
+                </div>
+                <div class="manage-table-wrap">
+                    <table class="manage-table">
+                        <thead><tr><th>Tên</th><th>Loại</th><th>Số thiết bị cảm biến</th><th>Khởi tạo</th><th></th></tr></thead>
+                        <tbody id="assets-table-body"><tr><td class="manage-empty" colspan="5">Đang tải tài sản...</td></tr></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="card">
+                <div class="manage-toolbar" style="margin-bottom: 16px;">
+                    <div class="card-title-group">
+                        <span class="material-symbols-outlined">memory</span>
+                        <h3 class="card-title">Thiết bị cảm biến</h3>
+                    </div>
+                    <button class="manage-action secondary" type="button" data-action="new-device">
+                        <span class="material-symbols-outlined">add</span> Thêm thiết bị cảm biến
+                    </button>
+                </div>
+                <div class="manage-table-wrap">
+                    <table class="manage-table">
+                        <thead><tr><th>Device ID</th><th>Tên</th><th>Loại</th><th>Tài sản</th><th>Kết nối</th><th>Bơm</th><th>Telemetry cuối</th><th>Firmware</th><th>Ngưỡng ẩm</th><th>Lưu lượng</th><th></th></tr></thead>
+                        <tbody id="devices-table-body"><tr><td class="manage-empty" colspan="11">Đang tải thiết bị...</td></tr></tbody>
+                    </table>
+                </div>
+            </section>
+
+        </div>
+        
+        <!-- Additional Views Placeholders -->
+        <div class="view-section" id="view-sensors">
+            <h2 style="margin-bottom: 16px; color: var(--primary);">Dữ liệu Cảm biến Chi tiết</h2>
+            <div class="sim-grid">
+                <div class="card" style="text-align: center;">
+                    <h4 style="color: var(--on-surface-variant); margin-bottom: 8px;">Nhiệt độ Môi trường</h4>
+                    <p style="font-size: 32px; font-weight: bold; color: var(--on-surface);" id="v-temp-sensor">--°C</p>
+                </div>
+                <div class="card" style="text-align: center;">
+                    <h4 style="color: var(--on-surface-variant); margin-bottom: 8px;">Độ ẩm Không khí</h4>
+                    <p style="font-size: 32px; font-weight: bold; color: var(--on-surface);" id="v-hum-sensor">--%</p>
+                </div>
+                <div class="card" style="text-align: center;">
+                    <h4 style="color: var(--on-surface-variant); margin-bottom: 8px;">Độ ẩm Đất</h4>
+                    <p style="font-size: 32px; font-weight: bold; color: var(--on-surface);" id="v-soil-sensor">--%</p>
+                </div>
+                <div class="card" style="text-align: center;">
+                    <h4 style="color: var(--on-surface-variant); margin-bottom: 8px;">Cường độ Ánh sáng</h4>
+                    <p style="font-size: 32px; font-weight: bold; color: var(--on-surface);" id="v-light-sensor">-- Lux</p>
+                </div>
+                <div class="card" style="text-align: center; grid-column: 1 / -1;">
+                    <h4 style="color: var(--on-surface-variant); margin-bottom: 8px;">Mực nước</h4>
+                    <p style="font-size: 32px; font-weight: bold; color: var(--secondary);" id="v-tank-sensor">--%</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="view-section" id="view-controls">
+            <h2 style="margin-bottom: 16px; color: var(--primary);">Trạng thái Thiết bị</h2>
+            <div class="card" style="padding: 0;">
+                <div style="display:flex; justify-content: space-between; padding: 20px; border-bottom: 1px solid var(--outline-variant);">
+                    <span style="font-weight: 600; color: var(--on-surface-variant);">Chế độ hệ thống</span>
+                    <div class="toggle-group">
+                        <span id="mode-status" style="color: var(--primary); font-weight: bold;">--</span>
+                        <label class="md-switch" aria-label="Bật hoặc tắt chế độ tự động">
+                            <input type="checkbox" id="controls-mode-switch">
+                            <span class="track"></span>
+                        </label>
+                    </div>
+                </div>
+                <div style="display:flex; justify-content: space-between; padding: 20px; border-bottom: 1px solid var(--outline-variant);">
+                    <span style="font-weight: 600; color: var(--on-surface-variant);">Máy bơm nước</span>
+                    <div class="toggle-group">
+                        <span id="pump-status" style="color: var(--primary); font-weight: bold;">--</span>
+                        <label class="md-switch" aria-label="Bật hoặc tắt máy bơm">
+                            <input type="checkbox" id="controls-pump-switch">
+                            <span class="track"></span>
+                        </label>
+                    </div>
+                </div>
+                <div style="display:flex; justify-content: space-between; padding: 20px;">
+                    <span style="font-weight: 600; color: var(--on-surface-variant);">Đèn quang hợp</span>
+                    <div class="toggle-group">
+                        <span id="led-status" style="color: var(--primary); font-weight: bold;">--</span>
+                        <label class="md-switch" aria-label="Bật hoặc tắt đèn quang hợp">
+                            <input type="checkbox" id="controls-led-switch">
+                            <span class="track"></span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="view-section" id="view-schedules">
+            <h2 style="margin-bottom: 16px; color: var(--primary);">Lịch trình Tưới</h2>
+            <div class="card">
+                <p style="color: var(--on-surface-variant); margin-bottom: 16px;">Hệ thống đang hoạt động ở chế độ <b id="schedule-mode">--</b>. Lịch trình sẽ tự động điều chỉnh theo dữ liệu cảm biến.</p>
+                <div style="padding: 16px; background: var(--surface-container-low); border-radius: var(--radius-sm);">
+                    <span class="material-symbols-outlined" style="color: var(--primary); vertical-align: bottom;">schedule</span>
+                    Chu kỳ kiểm tra độ ẩm: <b>Mỗi 1 giây</b>
+                </div>
+            </div>
+        </div>
+
+        <div class="view-section" id="view-analytics">
+            <h2 style="margin-bottom: 16px; color: var(--primary);">Thống kê Nhanh & Lịch sử</h2>
+            <div class="grid-2" style="margin-bottom: 24px;">
+                <div class="card" style="text-align: center;">
+                    <span class="material-symbols-outlined" style="font-size: 40px; color: var(--secondary); margin-bottom: 12px;">water_drop</span>
+                    <h4 style="margin: 0 0 8px 0; color: var(--on-surface-variant);">Nước đã dùng (ước tính)</h4>
+                    <p style="font-size: 24px; font-weight: bold; color: var(--on-surface);">12.5 L</p>
+                </div>
+                <div class="card" style="text-align: center;">
+                    <span class="material-symbols-outlined" style="font-size: 40px; color: var(--tertiary); margin-bottom: 12px;">wb_sunny</span>
+                    <h4 style="margin: 0 0 8px 0; color: var(--on-surface-variant);">Thời gian chiếu sáng</h4>
+                    <p style="font-size: 24px; font-weight: bold; color: var(--on-surface);">4h 30m</p>
+                </div>
+            </div>
+            
+        </div>
+        
+        <!-- View Logs -->
+        <div class="view-section" id="view-logs">
+            <h2 style="margin-bottom: 24px; color: var(--primary);">Nhật ký hoạt động</h2>
+            <div class="card" style="min-height: 400px; max-height: 500px; overflow-y: auto;" id="logs-container">
+                <div style="padding: 12px; border-bottom: 1px solid var(--outline-variant); color: var(--on-surface-variant);">
+                    Hệ thống đã sẵn sàng ghi nhận lịch sử...
+                </div>
+            </div>
+        </div>
+
+        <div class="view-section" id="view-management">
+            <div class="manage-heading">
+                <div>
+                    <h2>Telemetry thời gian thực</h2>
+                    <p>Dữ liệu mới được đồng bộ từ các thiết bị đang theo dõi.</p>
+                </div>
+            </div>
+            <p class="manage-status" id="management-status" role="status"></p>
+
+            <section class="card">
+                <div class="manage-toolbar" style="margin-bottom: 14px;">
+                    <div class="card-title-group">
+                        <span class="material-symbols-outlined">sensors</span>
+                        <h3 class="card-title">Telemetry thời gian thực</h3>
+                    </div>
+                    <span class="live-indicator" id="telemetry-live-status">Đang kết nối...</span>
+                </div>
+                <div class="telemetry-toolbar">
+                    <label for="telemetry-device-filter">Thiết bị
+                        <select class="manage-select" id="telemetry-device-filter"><option value="">Tất cả thiết bị</option></select>
+                    </label>
+                    <span class="manage-hint">50 bản ghi mới nhất</span>
+                </div>
+                <div class="manage-table-wrap">
+                    <table class="manage-table">
+                        <thead><tr><th>Thời gian</th><th>Thiết bị</th><th>Nhiệt độ (°C)</th><th>Độ ẩm không khí (%)</th><th>Độ ẩm đất (%)</th><th>Mực nước (%)</th></tr></thead>
+                        <tbody id="telemetry-table-body"><tr><td class="manage-empty" colspan="6">Chưa có dữ liệu telemetry.</td></tr></tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
+
+        <!-- View Settings -->
+        <div class="view-section" id="view-settings">
+            <h2 style="margin-bottom: 24px; color: var(--primary);">Cài đặt thông số</h2>
+            <div class="card">
+                <h3 style="margin-bottom: 16px; color: var(--primary);">Cấu hình Ngưỡng (Thresholds)</h3>
+                
+                <div class="sim-grid">
+                    <div class="sim-slider-group">
+                        <div class="sim-slider-header">
+                            <span class="sim-slider-label">Ngưỡng độ ẩm đất (cần tưới)</span>
+                            <span class="sim-slider-val" id="val-set-soil">40%</span>
+                        </div>
+                        <input type="range" id="set-soil" min="0" max="100" value="40">
+                        <button class="sidebar-action-btn" style="margin-top: 12px; width: auto;" onclick="saveSetting('soil')">Lưu Ngưỡng Đất</button>
+                    </div>
+
+                    <div class="sim-slider-group">
+                        <div class="sim-slider-header">
+                            <span class="sim-slider-label">Ngưỡng nhiệt độ (cảnh báo)</span>
+                            <span class="sim-slider-val" id="val-set-temp">35°C</span>
+                        </div>
+                        <input type="range" class="error" id="set-temp" min="20" max="60" value="35" step="0.5">
+                        <button class="sidebar-action-btn" style="background: var(--error); margin-top: 12px; width: auto;" onclick="saveSetting('temp')">Lưu Ngưỡng Nhiệt độ</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Premium Footer -->
+        <footer class="premium-footer">
+            <div class="footer-grid">
+                <div class="footer-brand">
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+                        <span class="material-symbols-outlined" style="color: var(--primary);">eco</span>
+                        <h3 style="color: var(--primary); font-weight: 700;">SmartIrrigate</h3>
+                    </div>
+                    <p>Hệ thống giám sát và tưới tiêu tự động IoT, giúp tối ưu hóa lượng nước và năng suất cây trồng của bạn mỗi ngày.</p>
+                </div>
+                <div class="footer-links">
+                    <h4>Quản lý</h4>
+                    <a href="#" onclick="document.querySelector('[data-target=\'view-dashboard\']').click()">Bảng điều khiển</a>
+                    <a href="#" onclick="document.querySelector('[data-target=\'view-schedules\']').click()">Lịch sử & Lên lịch</a>
+                    <a href="#" onclick="document.querySelector('[data-target=\'view-controls\']').click()">Cài đặt thiết bị</a>
+                </div>
+                <div class="footer-status">
+                    <h4>Trạng thái Hệ thống</h4>
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                        <span class="status-dot online"></span> Máy chủ Web: Ổn định
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span class="status-dot offline" id="footer-ws-dot"></span> WebSocket: <span id="footer-ws-text">Đang ngắt kết nối</span>
+                    </div>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2026 AgroPulse by GreenHome. All rights reserved.</p>
+                <div style="display:flex; gap: 16px;">
+                    <a href="#">Quyền riêng tư</a>
+                    <a href="#">Điều khoản sử dụng</a>
+                </div>
+            </div>
+        </footer>
+    </main>
+
+    <dialog class="manage-dialog" id="manage-dialog">
+        <form id="manage-form">
+            <div class="manage-dialog-header"><h3 id="manage-dialog-title">Thêm</h3></div>
+            <div class="manage-dialog-body" id="manage-dialog-fields"></div>
+            <div class="manage-dialog-footer">
+                <button class="manage-action secondary" type="button" data-action="cancel-dialog">Hủy</button>
+                <button class="manage-action" type="submit"><span class="material-symbols-outlined">save</span> Lưu</button>
+            </div>
+        </form>
+    </dialog>
+
+    <dialog class="manage-dialog sensor-picker-dialog" id="sensor-picker-dialog" aria-labelledby="sensor-picker-title">
+        <div class="manage-dialog-header"><h3 id="sensor-picker-title">Thêm cảm biến</h3></div>
+        <div class="manage-dialog-body sensor-picker-body">
+            <p class="sensor-picker-summary">Đã chọn <strong id="sensor-selection-count">0</strong> thiết bị. Thiết bị đang thuộc cây khác sẽ được chuyển sang cây này khi lưu.</p>
+            <div class="manage-table-wrap">
+                <table class="manage-table">
+                    <thead><tr><th>Thiết bị</th><th>Device ID</th><th>Đang gán cho</th><th>Kết nối</th><th></th></tr></thead>
+                    <tbody id="sensor-picker-body"><tr><td class="manage-empty" colspan="5">Đang tải thiết bị...</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+        <div class="manage-dialog-footer">
+            <button class="manage-action secondary" type="button" data-action="cancel-sensor-picker">Hủy</button>
+            <button class="manage-action" type="button" data-action="save-sensor-picker"><span class="material-symbols-outlined">save</span> Lưu</button>
+        </div>
+    </dialog>
+
+    <dialog class="manage-dialog" id="profile-dialog" aria-labelledby="profile-dialog-title">
+        <div class="manage-dialog-header"><h3 id="profile-dialog-title">Thông tin cá nhân</h3></div>
+        <div class="manage-dialog-body">
+            <dl class="profile-details">
+                <div><dt>Tên đăng nhập</dt><dd id="profile-username">Đang tải...</dd></div>
+                <div><dt>Trạng thái</dt><dd id="profile-status">Đang tải...</dd></div>
+                <div><dt>Ngày tạo</dt><dd id="profile-created">Đang tải...</dd></div>
+            </dl>
+        </div>
+        <div class="manage-dialog-footer">
+            <button class="manage-action secondary" type="button" data-account-action="close-profile">Đóng</button>
+        </div>
+    </dialog>
+
+    <script>
+        // ========== NAVIGATION LOGIC ==========
+        const navItems = document.querySelectorAll('.nav-item[data-target]');
+        const viewSections = document.querySelectorAll('.view-section');
+        
+        navItems.forEach(item => {
+            item.addEventListener('click', (e) => {
+                e.preventDefault();
+                navItems.forEach(nav => nav.classList.remove('active'));
+                item.classList.add('active');
+                
+                const targetId = item.getAttribute('data-target');
+                viewSections.forEach(view => {
+                    view.classList.remove('active');
+                });
+                const targetView = document.getElementById(targetId);
+                if(targetView) targetView.classList.add('active');
+            });
+        });
+
+        // ========== DOM ==========
+        const $ = id => document.getElementById(id);
+        const accountMenu = $('account-menu');
+        const accountMenuToggle = $('account-menu-toggle');
+        const accountDropdown = $('account-dropdown');
+        const profileDialog = $('profile-dialog');
+
+        function setAccountMenuOpen(open) {
+            accountDropdown.hidden = !open;
+            accountMenuToggle.setAttribute('aria-expanded', String(open));
+        }
+
+        accountMenuToggle.addEventListener('click', () => {
+            setAccountMenuOpen(accountDropdown.hidden);
+        });
+
+        document.addEventListener('click', event => {
+            if (!accountMenu.contains(event.target)) setAccountMenuOpen(false);
+        });
+
+        document.addEventListener('keydown', event => {
+            if (event.key === 'Escape' && !accountDropdown.hidden) {
+                setAccountMenuOpen(false);
+                accountMenuToggle.focus();
+            }
+        });
+
+        async function showProfile() {
+            setAccountMenuOpen(false);
+            try {
+                const response = await fetch('/api/auth/me');
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.error || 'Khong the tai thong tin tai khoan');
+                const user = result.user;
+                $('account-menu-username').textContent = user.username;
+                accountMenuToggle.textContent = user.username.slice(0, 2).toUpperCase();
+                accountMenuToggle.setAttribute('aria-label', `Tài khoản ${user.username}`);
+                $('profile-username').textContent = user.username;
+                $('profile-status').textContent = user.status_online ? 'Đang hoạt động' : 'Ngoại tuyến';
+                $('profile-created').textContent = user.createdAt ? new Date(user.createdAt).toLocaleString('vi-VN') : '—';
+                profileDialog.showModal();
+            } catch {
+                window.location.assign('/login');
+            }
+        }
+
+        document.addEventListener('click', event => {
+            const action = event.target.closest('[data-account-action]')?.dataset.accountAction;
+            if (action === 'profile') showProfile();
+            else if (action === 'close-profile') profileDialog.close();
+        });
+
+        const modeSwitch = $('mode-switch');
+        const swPump = $('sw-pump');
+        const swLed = $('sw-led');
+        const controlsModeSwitch = $('controls-mode-switch');
+        const controlsPumpSwitch = $('controls-pump-switch');
+        const controlsLedSwitch = $('controls-led-switch');
+
+        let isPumpOn = false;
+        let isLedOn = false;
+        let isAutoMode = true;
+
+        function syncControlSwitches() {
+            controlsModeSwitch.checked = isAutoMode;
+            controlsPumpSwitch.checked = isPumpOn;
+            controlsLedSwitch.checked = isLedOn;
+        }
+
+        // Start with auto → switches are read-only
+        swPump.style.pointerEvents = 'none';
+        swLed.style.pointerEvents = 'none';
+        syncControlSwitches();
+
+        // ========== MQTT ==========
+        const mqtt_server = "broker.hivemq.com";
+        const mqtt_port = 8000;
+        const topic_state = "smartgarden_v1/state";
+        const topic_cmd   = "smartgarden_v1/cmd";
+
+        const clientId = "WebClient-" + Math.random().toString(16).substr(2, 8);
+        const mqttClient = new Paho.MQTT.Client(mqtt_server, mqtt_port, clientId);
+
+        mqttClient.onConnectionLost = onConnectionLost;
+        mqttClient.onMessageArrived = onMessageArrived;
+
+        mqttClient.connect({
+            onSuccess: onConnect,
+            onFailure: function (e) {
+                console.log(e);
+                $('sidebar-status').textContent = 'Disconnected';
+                $('sidebar-status').style.color = 'var(--error)';
+                if($('footer-ws-dot')) {
+                    $('footer-ws-dot').className = 'status-dot offline';
+                    $('footer-ws-text').textContent = 'Lỗi kết nối MQTT';
+                }
+            }
+        });
+
+        function onConnect() {
+            console.log("MQTT Connected");
+            $('sidebar-status').textContent = 'Connected (MQTT)';
+            $('sidebar-status').style.color = 'var(--primary)';
+            if($('footer-ws-dot')) {
+                $('footer-ws-dot').className = 'status-dot online';
+                $('footer-ws-text').textContent = 'Kết nối qua Cloud (Chuẩn IoT)';
+            }
+            mqttClient.subscribe(topic_state);
+        }
+
+        function onConnectionLost(responseObject) {
+            if (responseObject.errorCode !== 0) {
+                console.log("onConnectionLost:" + responseObject.errorMessage);
+            }
+            $('sidebar-status').textContent = 'Disconnected';
+            $('sidebar-status').style.color = 'var(--error)';
+            if($('footer-ws-dot')) {
+                $('footer-ws-dot').className = 'status-dot offline';
+                $('footer-ws-text').textContent = 'Mất kết nối MQTT';
+            }
+        }
+
+        function onMessageArrived(message) {
+            try {
+                if (message.destinationName === topic_state) {
+                    const data = JSON.parse(message.payloadString);
+                    if(data.type === 'state') {
+                        updateUI(data);
+                    }
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        function sendCommand(cmd, value) {
+            const payload = JSON.stringify({ cmd, value });
+            if (!mqttClient.isConnected()) {
+                const warning = `[mqtt] khong gui duoc lenh den ${topic_cmd}: ${payload}; client chua ket noi`;
+                console.warn(warning);
+                addLog(`Không gửi được MQTT ${cmd}: thiết bị điều khiển chưa kết nối.`, 'warning');
+                return false;
+            }
+
+            try {
+                const message = new Paho.MQTT.Message(payload);
+                message.destinationName = topic_cmd;
+                mqttClient.send(message);
+                console.info(`[mqtt] da gui lenh den ${topic_cmd}: ${payload}`);
+                addLog(`Đã gửi MQTT ${cmd}: ${value}.`, 'success');
+                return true;
+            } catch (error) {
+                console.error(`[mqtt] loi gui lenh den ${topic_cmd}: ${payload}`, error);
+                addLog(`Lỗi gửi MQTT ${cmd}: ${error.message || 'không rõ nguyên nhân'}.`, 'warning');
+                return false;
+            }
+        }
+
+        async function sendLampCommand(isOn) {
+            try {
+                await apiRequest('/api/devices/esp32_01/command', {
+                    method: 'POST',
+                    body: JSON.stringify({ action: 'LAMP', state: isOn ? 'ON' : 'OFF' })
+                });
+                addLog(`Đã gửi lệnh đèn: ${isOn ? 'bật' : 'tắt'}.`, 'success');
+                return true;
+            } catch (error) {
+                addLog(`Không gửi được lệnh đèn: ${error.message}.`, 'warning');
+                return false;
+            }
+        }
+
+        async function sendWaterCommand(isOn) {
+            try {
+                await apiRequest('/api/devices/esp32_01/command', {
+                    method: 'POST',
+                    body: JSON.stringify({ action: 'WATER', state: isOn ? 'ON' : 'OFF' })
+                });
+                addLog(`Đã gửi lệnh bơm: ${isOn ? 'bật' : 'tắt'}.`, 'success');
+                return true;
+            } catch (error) {
+                addLog(`Không gửi được lệnh bơm: ${error.message}.`, 'warning');
+                return false;
+            }
+        }
+
+        // ========== MODE & CONTROL ==========
+        modeSwitch.addEventListener('change', () => {
+            isAutoMode = modeSwitch.checked;
+            $('mode-label').textContent = isAutoMode ? 'Tự động' : 'Thủ công';
+            $('led-auto-badge').textContent = isAutoMode ? 'Tự động' : 'Thủ công';
+            $('led-auto-badge').style.background = isAutoMode
+                ? 'var(--primary-container)' : 'var(--tertiary-fixed)';
+            $('led-auto-badge').style.color = isAutoMode
+                ? 'var(--on-primary-container)' : 'var(--tertiary)';
+
+            if (!isAutoMode) {
+                swPump.style.pointerEvents = 'auto';
+                swLed.style.pointerEvents = 'auto';
+            } else {
+                swPump.style.pointerEvents = 'none';
+                swLed.style.pointerEvents = 'none';
+            }
+            syncControlSwitches();
+            sendCommand('auto', isAutoMode);
+        });
+
+        swPump.addEventListener('change', async () => {
+            if (isAutoMode) {
+                swPump.checked = isPumpOn;
+                return;
+            }
+
+            const requestedState = swPump.checked;
+            const previousState = isPumpOn;
+            isPumpOn = requestedState;
+            syncControlSwitches();
+            if (!await sendWaterCommand(requestedState) && isPumpOn === requestedState) {
+                isPumpOn = previousState;
+                swPump.checked = previousState;
+                syncControlSwitches();
+            }
+        });
+        swLed.addEventListener('change', async () => {
+            if (isAutoMode) {
+                swLed.checked = isLedOn;
+                return;
+            }
+            const requestedState = swLed.checked;
+            const previousState = isLedOn;
+            isLedOn = swLed.checked;
+            syncControlSwitches();
+            if (!await sendLampCommand(requestedState) && isLedOn === requestedState) {
+                isLedOn = previousState;
+                swLed.checked = previousState;
+                syncControlSwitches();
+            }
+        });
+
+        controlsModeSwitch.addEventListener('change', () => {
+            modeSwitch.checked = controlsModeSwitch.checked;
+            modeSwitch.dispatchEvent(new Event('change'));
+        });
+        controlsPumpSwitch.addEventListener('change', () => {
+            const requestedState = controlsPumpSwitch.checked;
+            if (isAutoMode) {
+                modeSwitch.checked = false;
+                modeSwitch.dispatchEvent(new Event('change'));
+            }
+            swPump.checked = requestedState;
+            swPump.dispatchEvent(new Event('change'));
+        });
+        controlsLedSwitch.addEventListener('change', () => {
+            const requestedState = controlsLedSwitch.checked;
+            if (isAutoMode) {
+                modeSwitch.checked = false;
+                modeSwitch.dispatchEvent(new Event('change'));
+            }
+            swLed.checked = requestedState;
+            swLed.dispatchEvent(new Event('change'));
+        });
+
+        // ========== SETTINGS & LOGS ==========
+        function saveSetting(type) {
+            if (type === 'soil') {
+                const val = parseInt($('set-soil').value);
+                sendCommand("set_threshold_soil", val);
+                addLog("User thay đổi ngưỡng ẩm đất thành " + val + "%", "info");
+            } else if (type === 'temp') {
+                const val = parseFloat($('set-temp').value);
+                sendCommand("set_threshold_temp", val);
+                addLog("User thay đổi ngưỡng báo nhiệt thành " + val + "°C", "warning");
+            }
+        }
+
+        $('set-soil').addEventListener('input', (e) => {
+            $('val-set-soil').textContent = e.target.value + "%";
+        });
+        $('set-temp').addEventListener('input', (e) => {
+            $('val-set-temp').textContent = e.target.value + "°C";
+        });
+
+        function addLog(message, type="info") {
+            const container = $('logs-container');
+            const d = new Date();
+            const timeStr = d.toLocaleTimeString();
+            let color = "var(--on-surface-variant)";
+            if(type === "warning") color = "var(--error)";
+            if(type === "success") color = "var(--primary)";
+
+            const item = document.createElement('div');
+            item.style = `padding: 12px; border-bottom: 1px solid var(--outline-variant); color: ${color}; font-weight: 500;`;
+            item.innerHTML = `[${timeStr}] ${message}`;
+            container.prepend(item);
+        }
+
+        // ========== UPDATE UI ==========
+        let prevPump = false;
+        let prevWaterWarning = false;
+        let prevTempWarning = false;
+        let isFirstUpdate = true;
+
+        function updateUI(data) {
+            const soil = data.soil;
+            const water = data.water;
+            const temp = data.temp;
+            const hum = data.hum;
+            const light = data.light;
+            isPumpOn = data.pump;
+            isLedOn = data.led;
+            isAutoMode = data.auto;
+            
+            // Sync switches if they were changed externally
+            modeSwitch.checked = isAutoMode;
+            swPump.checked = isPumpOn;
+            swLed.checked = isLedOn;
+
+            // --- Event Logging ---
+            if(!isFirstUpdate) {
+                if(data.pump !== prevPump) {
+                    if(data.pump) addLog(`Bơm ĐƯỢC BẬT (${isAutoMode ? 'Tự động' : 'Thủ công'})`, "success");
+                    else addLog(`Bơm ĐÃ TẮT (${isAutoMode ? 'Tự động' : 'Thủ công'})`, "info");
+                }
+                if(data.water <= 10 && !prevWaterWarning) {
+                    addLog("CẢNH BÁO: Mức nước quá thấp!", "warning");
+                    prevWaterWarning = true;
+                } else if (data.water > 10) {
+                    prevWaterWarning = false;
+                }
+                if(data.temp > parseFloat($('set-temp').value) && !prevTempWarning) {
+                    addLog("CẢNH BÁO: Nhiệt độ quá cao (" + data.temp + "°C)!", "warning");
+                    prevTempWarning = true;
+                } else if (data.temp <= parseFloat($('set-temp').value)) {
+                    prevTempWarning = false;
+                }
+            }
+            prevPump = data.pump;
+            isFirstUpdate = false;
+            // --- End Event Logging ---
+
+            // Mode labels update
+            $('mode-label').textContent = isAutoMode ? 'Tự động' : 'Thủ công';
+            $('led-auto-badge').textContent = isAutoMode ? 'Tự động' : 'Thủ công';
+            $('led-auto-badge').style.background = isAutoMode
+                ? 'var(--primary-container)' : 'var(--tertiary-fixed)';
+            $('led-auto-badge').style.color = isAutoMode
+                ? 'var(--on-primary-container)' : 'var(--tertiary)';
+            if (!isAutoMode) {
+                swPump.style.pointerEvents = 'auto';
+                swLed.style.pointerEvents = 'auto';
+            } else {
+                swPump.style.pointerEvents = 'none';
+                swLed.style.pointerEvents = 'none';
+            }
+
+            // --- Soil Hero ---
+            $('v-soil').textContent = soil;
+            const soilBadge = $('soil-badge');
+            if (isPumpOn) {
+                soilBadge.textContent = 'Đang tưới';
+                soilBadge.className = 'status-badge active';
+            } else if (soil < 40 && water <= 10) {
+                soilBadge.textContent = 'Lỗi';
+                soilBadge.className = 'status-badge error';
+            } else {
+                soilBadge.textContent = 'Chế độ chờ';
+                soilBadge.className = 'status-badge standby';
+            }
+
+            // --- Climate ---
+            $('v-temp').textContent = temp.toFixed(1) + '°C';
+            $('v-hum').textContent = hum.toFixed(1) + '%';
+
+            const chipEl = $('climate-chip');
+            if (isPumpOn && temp > 35) {
+                chipEl.innerHTML = `<div class="alert-chip warning">
+                    <span class="material-symbols-outlined">local_fire_department</span>
+                    Tăng 20% thời gian tưới
+                </div>`;
+            } else if (isPumpOn && hum > 80) {
+                chipEl.innerHTML = `<div class="alert-chip caution">
+                    <span class="material-symbols-outlined">water</span>
+                    Giảm tưới (độ ẩm cao)
+                </div>`;
+            } else if (temp > 35) {
+                chipEl.innerHTML = `<div class="alert-chip warning">
+                    <span class="material-symbols-outlined">local_fire_department</span>
+                    Cảnh báo nhiệt độ cao
+                </div>`;
+            } else {
+                chipEl.innerHTML = `<div class="alert-chip info">
+                    <span class="material-symbols-outlined">check_circle</span>
+                    Điều kiện bình thường
+                </div>`;
+            }
+
+            // --- Lighting ---
+            $('v-light').textContent = light.toLocaleString();
+
+            // --- Water Tank ---
+            const tankCard = $('card-tank');
+            const tankFill = $('bar-water');
+            const tankDisplay = $('v-water-display');
+            const tankMsg = $('tank-msg');
+            const tankIcon = $('tank-icon');
+
+            tankDisplay.textContent = water + '%';
+            tankFill.style.width = water + '%';
+
+            if (water <= 10) {
+                tankCard.className = 'card tank-card';
+                tankFill.className = 'fill error';
+                tankDisplay.className = 'tank-level error';
+                tankIcon.textContent = 'water_lock';
+                tankMsg.innerHTML = `
+                    <span class="material-symbols-outlined">warning</span>
+                    <span>Mực nước thấp. Đã tắt bơm để bảo vệ thiết bị.</span>`;
+                tankMsg.style.color = 'var(--error)';
+            } else if (water <= 25) {
+                tankCard.className = 'card tank-card';
+                tankFill.className = 'fill warning';
+                tankDisplay.className = 'tank-level warning';
+                tankIcon.textContent = 'water_lock';
+                tankMsg.innerHTML = `
+                    <span class="material-symbols-outlined">info</span>
+                    <span>Mực nước đang xuống thấp. Hãy châm thêm nước.</span>`;
+                tankMsg.style.color = 'var(--tertiary)';
+            } else {
+                tankCard.className = 'card tank-card normal';
+                tankFill.className = 'fill';
+                tankDisplay.className = 'tank-level ok';
+                tankIcon.textContent = 'water_full';
+                tankMsg.innerHTML = `
+                    <span class="material-symbols-outlined">check_circle</span>
+                    <span>Mực nước đầy đủ. Hệ thống hoạt động bình thường.</span>`;
+                tankMsg.style.color = 'var(--on-surface-variant)';
+            }
+
+            // Update additional views
+            if($('v-temp-sensor')) $('v-temp-sensor').textContent = temp.toFixed(1) + '°C';
+            if($('v-hum-sensor')) $('v-hum-sensor').textContent = hum.toFixed(1) + '%';
+            if($('v-soil-sensor')) $('v-soil-sensor').textContent = soil + '%';
+            if($('v-light-sensor')) $('v-light-sensor').textContent = light.toLocaleString() + ' Lux';
+            if($('v-tank-sensor')) $('v-tank-sensor').textContent = water + '%';
+            if($('mode-status')) $('mode-status').textContent = isAutoMode ? 'Tự động' : 'Thủ công';
+            if($('pump-status')) $('pump-status').textContent = isPumpOn ? 'Đang chạy' : 'Đã tắt';
+            if($('led-status')) $('led-status').textContent = isLedOn ? 'Đang sáng' : 'Đã tắt';
+            if($('schedule-mode')) $('schedule-mode').textContent = isAutoMode ? 'Tự động' : 'Thủ công';
+            syncControlSwitches();
+
+            // Notification dot
+            const hasAlert = (soil < 40 && water <= 10) || temp > 35 || water <= 10;
+            $('notif-dot').style.display = hasAlert ? 'block' : 'none';
+        }
+
+        // ========== ASSET, DEVICE & TELEMETRY MANAGEMENT ==========
+        const management = { assets: [], devices: [], telemetry: [], socket: null, historyRequest: 0 };
+        const manageDialog = $('manage-dialog');
+        const manageForm = $('manage-form');
+        const sensorPickerDialog = $('sensor-picker-dialog');
+        let sensorPickerAssetId = '';
+        let sensorInitialDeviceIds = new Set();
+        let sensorSelectedDeviceIds = new Set();
+
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, character => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            })[character]);
+        }
+
+        async function apiRequest(path, options = {}) {
+            const response = await fetch(path, {
+                ...options,
+                headers: { ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...options.headers }
+            });
+            if (response.status === 204) return null;
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || `Yeu cau that bai (${response.status})`);
+            return result;
+        }
+
+        function setManagementStatus(message, state = '') {
+            const status = $('management-status');
+            status.textContent = message;
+            status.className = `manage-status ${state}`.trim();
+        }
+
+        function formatDate(value) {
+            if (!value) return 'Chưa có';
+            const date = new Date(value);
+            return Number.isNaN(date.getTime()) ? 'Chưa có' : date.toLocaleString('vi-VN');
+        }
+
+        function renderAssets() {
+            const body = $('assets-table-body');
+            if (!management.assets.length) {
+                body.innerHTML = '<tr><td class="manage-empty" colspan="5">Chưa có tài sản.</td></tr>';
+                return;
+            }
+            body.innerHTML = management.assets.map(asset => {
+                const deviceCount = management.devices.filter(device => String(device.assetId || '') === String(asset._id)).length;
+                return `<tr>
+                    <td>${escapeHtml(asset.name)}</td><td>${escapeHtml(asset.type || 'plant')}</td>
+                    <td>${deviceCount}</td><td>${escapeHtml(formatDate(asset.createdAt))}</td>
+                    <td><div class="manage-actions">
+                        <button class="manage-action small" type="button" data-action="manage-sensors" data-id="${escapeHtml(asset._id)}" title="Chọn thiết bị cảm biến">Thêm cảm biến</button>
+                        <button class="manage-action secondary small" type="button" data-action="edit-asset" data-id="${escapeHtml(asset._id)}" title="Sửa tài sản">Sửa</button>
+                        <button class="manage-action danger small" type="button" data-action="delete-asset" data-id="${escapeHtml(asset._id)}" title="Xóa tài sản">Xóa</button>
+                    </div></td>
+                </tr>`;
+            }).join('');
+        }
+
+        function renderSensorPicker() {
+            const body = $('sensor-picker-body');
+            $('sensor-selection-count').textContent = sensorSelectedDeviceIds.size;
+            if (!management.devices.length) {
+                body.innerHTML = '<tr><td class="manage-empty" colspan="5">Chưa có thiết bị cảm biến.</td></tr>';
+                return;
+            }
+            body.innerHTML = management.devices.map(device => {
+                const deviceId = String(device._id);
+                const selected = sensorSelectedDeviceIds.has(deviceId);
+                const owner = management.assets.find(asset => String(asset._id) === String(device.assetId));
+                return `<tr>
+                    <td>${escapeHtml(device.name)}</td>
+                    <td>${escapeHtml(deviceId)}</td>
+                    <td>${escapeHtml(owner?.name || 'Chưa gán')}</td>
+                    <td>${device.online ? 'Online' : 'Offline'}</td>
+                    <td><button class="manage-action small${selected ? ' secondary' : ''}" type="button" data-action="toggle-sensor" data-id="${escapeHtml(deviceId)}">${selected ? 'Bỏ chọn' : 'Chọn'}</button></td>
+                </tr>`;
+            }).join('');
+        }
+
+        function openSensorPicker(assetId) {
+            const asset = management.assets.find(item => String(item._id) === String(assetId));
+            if (!asset) return;
+            sensorPickerAssetId = String(asset._id);
+            $('sensor-picker-title').textContent = `Thêm cảm biến cho ${asset.name}`;
+            sensorInitialDeviceIds = new Set(management.devices
+                .filter(device => String(device.assetId || '') === sensorPickerAssetId)
+                .map(device => String(device._id)));
+            sensorSelectedDeviceIds = new Set(sensorInitialDeviceIds);
+            renderSensorPicker();
+            sensorPickerDialog.showModal();
+        }
+
+        async function saveSensorSelection() {
+            console.log("Bạn vừa click thêm cảm biến cho cây");
+            const selectedIds = [...sensorSelectedDeviceIds];
+            try {
+                await apiRequest(`/api/assets/${encodeURIComponent(sensorPickerAssetId)}/devices`, {
+                    method: 'PUT',
+                    body: JSON.stringify({ deviceIds: selectedIds })
+                });
+                const selected = new Set(selectedIds);
+                management.devices = management.devices.map(device => {
+                    const deviceId = String(device._id);
+                    if (selected.has(deviceId)) return { ...device, assetId: sensorPickerAssetId };
+                    if (sensorInitialDeviceIds.has(deviceId)) return { ...device, assetId: null };
+                    return device;
+                });
+                sensorPickerDialog.close();
+                renderAssets();
+                renderDevices();
+                setManagementStatus(`Đã lưu ${selectedIds.length} cảm biến cho cây.`, 'success');
+            } catch (error) {
+                setManagementStatus(error.message, 'error');
+            }
+        }
+
+        function renderDevices() {
+            const body = $('devices-table-body');
+            if (!management.devices.length) {
+                body.innerHTML = '<tr><td class="manage-empty" colspan="11">Chưa có thiết bị.</td></tr>';
+                return;
+            }
+            body.innerHTML = management.devices.map(device => {
+                const attributes = device.attributes || {};
+                const asset = management.assets.find(item => String(item._id) === String(device.assetId));
+                const minimum = attributes.safe_min_soil_humidity;
+                const maximum = attributes.safe_max_soil_humidity;
+                const humidityRange = minimum == null && maximum == null ? 'Chưa đặt' : `${minimum ?? '—'} - ${maximum ?? '—'}%`;
+                return `<tr>
+                    <td title="${escapeHtml(device._id)}">${escapeHtml(device._id)}</td>
+                    <td>${escapeHtml(device.name)}</td><td>${escapeHtml(device.type)}</td>
+                    <td>${escapeHtml(asset?.name || 'Chưa gán')}</td>
+                    <td>${device.online ? 'Online' : 'Offline'}</td><td>${escapeHtml(device.pumpState || 'OFF')}</td>
+                    <td>${escapeHtml(formatDate(device.lastSeenAt))}</td><td>${escapeHtml(attributes.firmware_version || '—')}</td>
+                    <td>${escapeHtml(humidityRange)}</td><td>${attributes.flow_rate_lpm ?? '—'}</td>
+                    <td><div class="manage-actions">
+                        <button class="manage-action secondary small" type="button" data-action="edit-device" data-id="${escapeHtml(device._id)}" title="Sửa thiết bị">Sửa</button>
+                        <button class="manage-action danger small" type="button" data-action="delete-device" data-id="${escapeHtml(device._id)}" title="Xóa thiết bị">Xóa</button>
+                    </div></td>
+                </tr>`;
+            }).join('');
+        }
+
+        function refreshDeviceOptions() {
+            const selected = $('telemetry-device-filter').value;
+            $('telemetry-device-filter').innerHTML = '<option value="">Tất cả thiết bị</option>' + management.devices
+                .map(device => `<option value="${escapeHtml(device._id)}">${escapeHtml(device.name)} (${escapeHtml(device._id)})</option>`).join('');
+            if (management.devices.some(device => String(device._id) === selected)) $('telemetry-device-filter').value = selected;
+        }
+
+        function renderTelemetry() {
+            const body = $('telemetry-table-body');
+            if (!management.telemetry.length) {
+                body.innerHTML = '<tr><td class="manage-empty" colspan="6">Chưa có dữ liệu telemetry.</td></tr>';
+                refreshTelemetryChart();
+                return;
+            }
+            body.innerHTML = management.telemetry.map(row => `<tr>
+                <td>${escapeHtml(formatDate(row.timestamp))}</td><td>${escapeHtml(row.deviceId)}</td>
+                <td>${escapeHtml(row.temperature)}</td><td>${escapeHtml(row.humidity)}</td>
+                <td>${escapeHtml(row.soil_humidity)}</td><td>${escapeHtml(row.water_level)}</td>
+            </tr>`).join('');
+            refreshTelemetryChart();
+        }
+
+        async function loadTelemetryHistory() {
+            const requestId = ++management.historyRequest;
+            const selectedId = $('telemetry-device-filter').value;
+            const devices = selectedId ? management.devices.filter(device => String(device._id) === selectedId) : management.devices;
+            try {
+                const batches = await Promise.all(devices.map(device =>
+                    apiRequest(`/api/devices/${encodeURIComponent(device._id)}/telemetry?limit=50`)
+                ));
+                if (requestId !== management.historyRequest) return;
+                management.telemetry = batches.flat().sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 50);
+                renderTelemetry();
+            } catch (error) {
+                if (requestId === management.historyRequest) setManagementStatus(error.message, 'error');
+            }
+        }
+
+        function subscribeTelemetry() {
+            if (management.socket?.readyState !== WebSocket.OPEN) return;
+            const selectedId = $('telemetry-device-filter').value;
+            const deviceIds = selectedId ? [selectedId] : management.devices.map(device => String(device._id));
+            management.socket.send(JSON.stringify({ type: 'subscribe', deviceIds }));
+        }
+
+        function connectManagementSocket() {
+            const liveStatus = $('telemetry-live-status');
+            const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const socket = new WebSocket(`${protocol}//${location.host}/ws`);
+            management.socket = socket;
+            socket.addEventListener('open', () => {
+                liveStatus.textContent = 'Đang nhận dữ liệu';
+                liveStatus.classList.add('connected');
+                subscribeTelemetry();
+            });
+            socket.addEventListener('message', event => {
+                let message;
+                try { message = JSON.parse(event.data); } catch { return; }
+                if (message.type === 'PUMP_STATE' && message.data) {
+                    isPumpOn = message.data.state === 'ON';
+                    swPump.checked = isPumpOn;
+                    syncControlSwitches();
+                    if ($('pump-status')) $('pump-status').textContent = isPumpOn ? 'Đang chạy' : 'Đã tắt';
+                    return;
+                }
+                if (message.type === 'LED_STATE' && message.data) {
+                    isLedOn = message.data.state === 'ON';
+                    swLed.checked = isLedOn;
+                    syncControlSwitches();
+                    if ($('led-status')) $('led-status').textContent = isLedOn ? 'Đang sáng' : 'Đã tắt';
+                    return;
+                }
+                if (message.type !== 'TELEMETRY' || !message.data) return;
+                const selectedId = $('telemetry-device-filter').value;
+                if (selectedId && String(message.deviceId) !== selectedId) return;
+                const key = `${message.deviceId}:${message.data.timestamp}`;
+                if (management.telemetry.some(row => `${row.deviceId}:${row.timestamp}` === key)) return;
+                management.telemetry.unshift({ ...message.data, deviceId: message.deviceId });
+                management.telemetry = management.telemetry.slice(0, 100);
+                renderTelemetry();
+            });
+            socket.addEventListener('close', () => {
+                liveStatus.textContent = 'Đang kết nối lại';
+                liveStatus.classList.remove('connected');
+                window.setTimeout(connectManagementSocket, 3000);
+            });
+            socket.addEventListener('error', () => socket.close());
+        }
+
+        async function loadManagementData() {
+            try {
+                const [assets, devices] = await Promise.all([
+                    apiRequest('/api/assets'), apiRequest('/api/devices')
+                ]);
+                management.assets = assets;
+                management.devices = devices;
+                renderAssets();
+                renderDevices();
+                refreshDeviceOptions();
+                setManagementStatus('');
+                subscribeTelemetry();
+                await loadTelemetryHistory();
+            } catch (error) {
+                setManagementStatus(error.message, 'error');
+            }
+        }
+
+        function fieldMarkup(name, label, value = '', type = 'text', required = false, full = false, readOnly = false) {
+            return `<div class="manage-field${full ? ' full' : ''}">
+                <label for="manage-${name}">${escapeHtml(label)}</label>
+                <input class="manage-input" id="manage-${name}" name="${escapeHtml(name)}" type="${type}" value="${escapeHtml(value)}"${required ? ' required' : ''}${readOnly ? ' readonly' : ''}>
+            </div>`;
+        }
+
+        function openAssetDialog(asset = null) {
+            manageDialog.dataset.kind = 'asset';
+            manageDialog.dataset.id = asset?._id || '';
+            $('manage-dialog-title').textContent = asset ? 'Sửa tài sản' : 'Thêm tài sản';
+            $('manage-dialog-fields').innerHTML = fieldMarkup('name', 'Tên tài sản', asset?.name || '', 'text', true) +
+                fieldMarkup('type', 'Loại tài sản', asset?.type || 'plant');
+            manageDialog.showModal();
+        }
+
+        function openDeviceDialog(device = null) {
+            manageDialog.dataset.kind = 'device';
+            manageDialog.dataset.id = device?._id || '';
+            $('manage-dialog-title').textContent = device ? 'Sửa thiết bị' : 'Thêm thiết bị';
+            const assetOptions = '<option value="">Chưa gán tài sản</option>' + management.assets.map(asset =>
+                `<option value="${escapeHtml(asset._id)}"${String(asset._id) === String(device?.assetId || '') ? ' selected' : ''}>${escapeHtml(asset.name)}</option>`
+            ).join('');
+            const attributes = device?.attributes || {};
+            const fields = [];
+            fields.push(fieldMarkup('id', 'Device ID (MQTT topic)', device?._id || '', 'text', true, true, !!device));
+            fields.push(fieldMarkup('name', 'Tên thiết bị', device?.name || '', 'text', true));
+            fields.push(fieldMarkup('type', 'Loại thiết bị', device?.type || 'esp32'));
+            fields.push(`<div class="manage-field"><label for="manage-assetId">Tài sản</label><select class="manage-select" id="manage-assetId" name="assetId">${assetOptions}</select></div>`);
+            fields.push(fieldMarkup('firmware_version', 'Phiên bản firmware', attributes.firmware_version || ''));
+            fields.push(fieldMarkup('safe_min_soil_humidity', 'Ngưỡng ẩm đất tối thiểu (%)', attributes.safe_min_soil_humidity ?? '', 'number'));
+            fields.push(fieldMarkup('safe_max_soil_humidity', 'Ngưỡng ẩm đất tối đa (%)', attributes.safe_max_soil_humidity ?? '', 'number'));
+            fields.push(fieldMarkup('flow_rate_lpm', 'Lưu lượng (L/phút)', attributes.flow_rate_lpm ?? '', 'number'));
+            fields.push('<p class="manage-hint full">Trạng thái online, bơm và thời điểm gửi cuối do thiết bị cập nhật tự động.</p>');
+            $('manage-dialog-fields').innerHTML = fields.join('');
+            manageDialog.showModal();
+        }
+
+        async function editDevice(deviceId) {
+            try {
+                const device = await apiRequest(`/api/devices/${encodeURIComponent(deviceId)}`);
+                openDeviceDialog(device);
+            } catch (error) {
+                setManagementStatus(error.message, 'error');
+            }
+        }
+
+        document.addEventListener('click', async event => {
+            const button = event.target.closest('[data-action]');
+            if (!button) return;
+            const { action, id } = button.dataset;
+            if (action === 'new-asset') openAssetDialog();
+            else if (action === 'new-device') openDeviceDialog();
+            else if (action === 'manage-sensors') openSensorPicker(id);
+            else if (action === 'toggle-sensor') {
+                if (sensorSelectedDeviceIds.has(id)) sensorSelectedDeviceIds.delete(id);
+                else sensorSelectedDeviceIds.add(id);
+                renderSensorPicker();
+            } else if (action === 'cancel-sensor-picker') sensorPickerDialog.close();
+            else if (action === 'save-sensor-picker') await saveSensorSelection();
+            else if (action === 'cancel-dialog') manageDialog.close();
+            else if (action === 'edit-asset') openAssetDialog(management.assets.find(asset => String(asset._id) === id));
+            else if (action === 'edit-device') await editDevice(id);
+            else if (action === 'delete-asset' && window.confirm('Xóa tài sản này? Thiết bị sẽ được giữ lại và bỏ liên kết tài sản.')) {
+                try {
+                    await apiRequest(`/api/assets/${encodeURIComponent(id)}`, { method: 'DELETE' });
+                    await loadManagementData();
+                        setManagementStatus('Đã xóa tài sản; thiết bị và lịch sử được giữ nguyên.', 'success');
+                } catch (error) { setManagementStatus(error.message, 'error'); }
+            } else if (action === 'delete-device' && window.confirm('Xóa thiết bị? Telemetry và lịch sử tưới đã lưu sẽ được giữ lại.')) {
+                try {
+                    await apiRequest(`/api/devices/${encodeURIComponent(id)}`, { method: 'DELETE' });
+                    await loadManagementData();
+                    setManagementStatus('Đã xóa thiết bị; dữ liệu lịch sử được giữ nguyên.', 'success');
+                } catch (error) { setManagementStatus(error.message, 'error'); }
+            }
+        });
+
+        manageForm.addEventListener('submit', async event => {
+            event.preventDefault();
+            const kind = manageDialog.dataset.kind;
+            const id = manageDialog.dataset.id;
+            const formData = new FormData(manageForm);
+            let payload = Object.fromEntries(formData.entries());
+            if (kind === 'device') {
+                for (const field of ['safe_min_soil_humidity', 'safe_max_soil_humidity', 'safe_min_water_level', 'safe_max_water_level', 'flow_rate_lpm']) {
+                    payload[field] = payload[field] === '' ? null : Number(payload[field]);
+                }
+            }
+            const path = kind === 'asset' ? '/api/assets' : '/api/devices';
+            const method = id ? 'PUT' : 'POST';
+            if (id && kind === 'device') delete payload.id;
+            try {
+                await apiRequest(id ? `${path}/${encodeURIComponent(id)}` : path, {
+                    method, body: JSON.stringify(payload)
+                });
+                manageDialog.close();
+                await loadManagementData();
+                setManagementStatus(kind === 'asset' ? 'Đã lưu tài sản.' : 'Đã lưu thiết bị và thuộc tính.', 'success');
+            } catch (error) { setManagementStatus(error.message, 'error'); }
+        });
+
+        $('telemetry-device-filter').addEventListener('change', () => {
+            subscribeTelemetry();
+            loadTelemetryHistory();
+        });
+
+        window.addEventListener('DOMContentLoaded', () => {
+            loadManagementData();
+            connectManagementSocket();
+        });
+
+        // ========== LIVE TELEMETRY CHART ==========
+        let telemetryChart;
+
+        function refreshTelemetryChart() {
+            if (!telemetryChart) return;
+            const rows = management.telemetry.slice(0, 50).reverse();
+            telemetryChart.data.labels = rows.map(row => `${new Date(row.timestamp).toLocaleTimeString('vi-VN')} · ${row.deviceId}`);
+            telemetryChart.data.datasets[0].data = rows.map(row => row.soil_humidity ?? null);
+            telemetryChart.data.datasets[1].data = rows.map(row => row.humidity ?? null);
+            telemetryChart.data.datasets[2].data = rows.map(row => row.temperature ?? null);
+            telemetryChart.update('none');
+        }
+
+        function initTelemetryChart() {
+            const canvas = $('telemetryChart');
+            if (!canvas || typeof Chart === 'undefined') return;
+            telemetryChart = new Chart(canvas, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        { label: 'Độ ẩm đất (%)', data: [], borderColor: '#006399', backgroundColor: 'rgba(0, 99, 153, 0.08)', borderWidth: 2, pointRadius: 2, tension: 0.25 },
+                        { label: 'Độ ẩm không khí (%)', data: [], borderColor: '#0f5238', backgroundColor: 'rgba(15, 82, 56, 0.08)', borderWidth: 2, pointRadius: 2, tension: 0.25 },
+                        { label: 'Nhiệt độ (°C)', data: [], borderColor: '#ba1a1a', backgroundColor: 'rgba(186, 26, 26, 0.08)', borderWidth: 2, pointRadius: 2, tension: 0.25 }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: { legend: { position: 'bottom' } },
+                    scales: { y: { beginAtZero: false }, x: { ticks: { maxTicksLimit: 8 } } }
+                }
+            });
+            refreshTelemetryChart();
+        }
+
+        window.addEventListener('DOMContentLoaded', initTelemetryChart);
+        
+    </script>
+</body>
+</html>
