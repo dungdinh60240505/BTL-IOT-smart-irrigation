@@ -1,0 +1,73 @@
+services:
+  # 1. Eclipse Mosquitto MQTT Broker
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: iot_mosquitto
+    restart: always
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
+    networks:
+      - iot-network
+
+  # 2. MongoDB Database
+  mongodb:
+    image: mongo:latest
+    container_name: iot_mongodb
+    restart: always
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - iot-network
+
+  # 3. Backend Express Server + WebSocket
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: iot_server
+    restart: always
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - MONGO_URI=mongodb://mongodb:27017/smart_irrigation
+      - MQTT_URL=mqtt://mosquitto:1883
+      - JWT_SECRET=replace-with-a-long-random-secret
+      - OFFLINE_AFTER_SEC=30
+      - DEFAULT_FLOW_RATE_LPM=2
+    depends_on:
+      - mongodb
+      - mosquitto
+    networks:
+      - iot-network
+
+  # 4. Frontend Next.js UI
+  frontend:
+    build:
+      context: ./reactUI
+      dockerfile: Dockerfile
+    container_name: iot_frontend
+    restart: always
+    ports:
+      - "4001:4001"
+    environment:
+      - INTERNAL_API_URL=http://server:3001
+    depends_on:
+      - server
+    networks:
+      - iot-network
+
+volumes:
+  mongodb_data:
+  mosquitto_data:
+  mosquitto_log:
+
+networks:
+  iot-network:
+    driver: bridge

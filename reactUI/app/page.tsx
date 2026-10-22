@@ -1731,7 +1731,7 @@ export default function Page() {
   // Kết nối WebSocket để nhận dữ liệu Telemetry thời gian thực
   useEffect(() => {
     if (typeof window === 'undefined') return
-    const wsUrl = `ws://${window.location.hostname}:3000/ws`
+    const wsUrl = `ws://${window.location.hostname}:3001/ws`
     let ws: WebSocket | null = null
 
     try {
