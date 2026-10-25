@@ -32,7 +32,7 @@ async function authenticateToken(req, res, next) {
 	}
 	if (!payload.sub) return rejectAuthentication(req, res, 'Token khong hop le');
 	try {
-		const user = await User.findById(payload.sub).select('_id username status_online createdAt');
+		const user = await User.findById(payload.sub).select('_id username role status_online turnOnPump priority createdAt');
 		if (!user) return rejectAuthentication(req, res, 'Tai khoan khong ton tai');
 		if (!user.status_online) return rejectAuthentication(req, res, 'Phien dang nhap da ket thuc');
 		req.user = user;
@@ -42,4 +42,17 @@ async function authenticateToken(req, res, next) {
 	}
 }
 
-module.exports = { authenticateToken };
+function isAdmin(user) {
+	if (!user) return false;
+	return user.role === 'admin' || user.username?.toLowerCase() === 'admin';
+}
+
+function requireAdmin(req, res, next) {
+	if (!req.user || !isAdmin(req.user)) {
+		return res.status(403).json({ error: 'Chỉ tài khoản quản trị viên (admin) mới có quyền thực hiện thao tác này' });
+	}
+	next();
+}
+
+module.exports = { authenticateToken, requireAdmin, isAdmin };
+

@@ -1,10 +1,16 @@
 import type { AssetModelVariant } from '@/lib/asset-type'
 
+export interface StationLayout {
+  x: number
+  z: number
+}
+
 export interface GreenhouseAsset {
   _id: string
   name: string
   type?: string
   createdAt?: string
+  layout?: StationLayout | null
 }
 
 export interface GreenhouseDeviceAttributes {
@@ -52,6 +58,20 @@ export interface Thresholds {
 }
 
 export type SoilHealth = 'unknown' | 'dry' | 'healthy' | 'wet'
+
+export interface GreenhouseStation {
+  asset: GreenhouseAsset
+  devices: GreenhouseDevice[]
+  telemetryByDevice: Record<string, GreenhouseTelemetry>
+  primaryDevice: GreenhouseDevice | null
+  primaryTelemetry: GreenhouseTelemetry | null
+  thresholds: Thresholds
+  soilHealth: SoilHealth
+  waterLow: boolean
+  pumpOn: boolean
+  online: boolean
+  position: StationLayout
+}
 
 export const TREE_GLTF_PATH = '/model/low_poly_trees.glb'
 

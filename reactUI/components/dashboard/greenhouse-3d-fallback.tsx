@@ -4,12 +4,14 @@ import { SCENE_COLORS } from './greenhouse-3d-types'
 interface Greenhouse3DFallbackProps {
   variant: AssetModelVariant
   nodeCount?: number
+  treeCount?: number
   message?: string
 }
 
 export function Greenhouse3DFallback({
   variant,
   nodeCount = 0,
+  treeCount = 1,
   message = 'Thiết bị không hỗ trợ WebGL. Dữ liệu vẫn hiển thị đầy đủ ở panel bên cạnh.',
 }: Greenhouse3DFallbackProps) {
   const visibleNodes = Math.min(Math.max(nodeCount, 0), 3)
@@ -90,6 +92,9 @@ export function Greenhouse3DFallback({
 
       <p className="max-w-[420px] text-center text-[11px] leading-relaxed text-slate-500">
         {message}
+      </p>
+      <p className="text-[10px] text-slate-400">
+        {treeCount} cây · {nodeCount} node cảm biến
       </p>
     </div>
   )

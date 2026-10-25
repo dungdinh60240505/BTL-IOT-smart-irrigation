@@ -38,6 +38,13 @@ import {
   ChevronRight,
   Radio,
   Sliders,
+  Users,
+  ShieldCheck,
+  ShieldAlert,
+  Search,
+  CheckCircle2,
+  AlertTriangle,
+  Lock,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -59,6 +66,12 @@ import {
   assetTypeLabel,
   resolveAssetVariant,
 } from '@/lib/asset-type'
+import {
+  normalizeTelemetry,
+  type GreenhouseTelemetry,
+  type RawTelemetry,
+  type StationLayout,
+} from '@/components/dashboard/greenhouse-3d-types'
 
 const Greenhouse3D = dynamic(
   () => import('@/components/dashboard/greenhouse-3d'),
@@ -90,6 +103,7 @@ export interface WateringEventItem {
   _id: string
   deviceId: string
   assetId?: string | null
+  assetName?: string | null
   startedAt: string
   endedAt?: string | null
   durationSec?: number | null
@@ -110,9 +124,21 @@ export interface AssetItem {
   type?: string
   createdAt?: string
   updatedAt?: string
+  layout?: StationLayout | null
 }
 
-type View = 'dashboard' | 'assets' | 'sensors' | 'telemetry' | 'history' | 'profile' | 'settings'
+export interface UserItem {
+  _id: string
+  username: string
+  role?: string
+  priority?: number
+  turnOnPump?: boolean
+  status_online?: boolean
+  createdAt?: string
+  updatedAt?: string
+}
+
+type View = 'dashboard' | 'assets' | 'sensors' | 'telemetry' | 'history' | 'users' | 'profile' | 'settings'
 
 const nav = [
   { id: 'dashboard' as View, label: 'Dashboard', icon: LayoutDashboard },
@@ -120,6 +146,7 @@ const nav = [
   { id: 'sensors' as View, label: 'Quản lý thiết bị', icon: Cpu },
   { id: 'telemetry' as View, label: 'Lịch sử nhận dữ liệu', icon: Radio },
   { id: 'history' as View, label: 'Lịch sử tưới', icon: Droplets },
+  { id: 'users' as View, label: 'Quản lý người dùng', icon: Users },
   { id: 'profile' as View, label: 'Thông tin tài khoản', icon: UserRound },
   { id: 'settings' as View, label: 'Cài đặt', icon: Settings },
 ]
@@ -253,7 +280,7 @@ function DualRangeSlider({
       target.removeEventListener('pointercancel', onPointerUp)
       try {
         target.releasePointerCapture(upEv.pointerId)
-      } catch {}
+      } catch { }
     }
 
     target.addEventListener('pointermove', onPointerMove)
@@ -345,8 +372,6 @@ function DataTable({
   assets,
   loading,
   onAdd,
-  onSelectAssetHistory,
-  selectedAssetId,
   onRowClick,
 }: {
   kind: 'sensors' | 'history' | 'assets'
@@ -355,11 +380,8 @@ function DataTable({
   assets: AssetItem[]
   loading?: boolean
   onAdd?: (kind: 'sensors' | 'assets') => void
-  onSelectAssetHistory?: (assetId: string) => void
-  selectedAssetId?: string
   onRowClick?: (data: any, title: string) => void
 }) {
-  const [localAssetFilter, setLocalAssetFilter] = useState<string>('all')
   const [currentPage, setCurrentPage] = useState<number>(1)
   const PAGE_SIZE = 5
 
@@ -369,26 +391,17 @@ function DataTable({
     return 'Danh mục Cây & Khu vườn (Assets)'
   }
 
-  const activeAssetFilter = onSelectAssetHistory ? (selectedAssetId || 'all') : localAssetFilter
-
-  const filteredWateringEvents = onSelectAssetHistory
-    ? wateringEvents
-    : wateringEvents.filter((w) => {
-        if (localAssetFilter === 'all') return true
-        return w.assetId === localAssetFilter
-      })
-
-  // Reset về trang 1 khi thay đổi filter hoặc kind
+  // Reset về trang 1 khi thay đổi kind hoặc số lượng bản ghi
   useEffect(() => {
     setCurrentPage(1)
-  }, [localAssetFilter, selectedAssetId, kind, wateringEvents])
+  }, [kind, wateringEvents.length, devices.length, assets.length])
 
   const totalItems =
     kind === 'assets'
       ? assets.length
       : kind === 'sensors'
-      ? devices.length
-      : filteredWateringEvents.length
+        ? devices.length
+        : wateringEvents.length
 
   const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE))
   const safePage = Math.min(Math.max(1, currentPage), totalPages)
@@ -397,32 +410,12 @@ function DataTable({
 
   const displayedAssets = assets.slice(startIndex, endIndex)
   const displayedDevices = devices.slice(startIndex, endIndex)
-  const displayedWateringEvents = filteredWateringEvents.slice(startIndex, endIndex)
+  const displayedWateringEvents = wateringEvents.slice(startIndex, endIndex)
 
   return (
     <Card className="overflow-hidden border-emerald-100/90 bg-white/95 shadow-xs flex flex-col gap-0 py-0 h-full">
       <CardHeader className="border-b border-emerald-100/70 px-4 py-3 flex flex-row items-center justify-between space-y-0 gap-2">
         <CardTitle className="text-sm text-slate-900 font-semibold">{getTitle()}</CardTitle>
-        {kind === 'history' && assets.length > 0 && (
-          <div className="flex items-center gap-1.5">
-            <select
-              value={activeAssetFilter}
-              onChange={(e) => {
-                const val = e.target.value
-                setLocalAssetFilter(val)
-                if (onSelectAssetHistory) onSelectAssetHistory(val)
-              }}
-              className="h-8 rounded-md border border-slate-300 bg-slate-50 px-2.5 py-1 text-xs font-medium text-black outline-none transition-colors hover:bg-slate-100 focus:border-cyan-600 focus:ring-1 focus:ring-cyan-600"
-            >
-              <option value="all">-- Tất cả cây/khu vườn --</option>
-              {assets.map((a) => (
-                <option key={a._id} value={a._id}>
-                  {a.name} ({a.type})
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
         {onAdd && (kind === 'assets' || kind === 'sensors') && (
           <Button
             size="sm"
@@ -453,7 +446,7 @@ function DataTable({
                     <TableHead>{kind === 'sensors' ? 'Loại thiết bị' : 'Thời lượng tưới'}</TableHead>
                     <TableHead>{kind === 'sensors' ? 'Trạng thái kết nối' : 'Lượng nước đã tưới'}</TableHead>
                     <TableHead className="text-right">
-                      {kind === 'sensors' ? 'Lần cuối hoạt động' : 'Mã thiết bị tưới'}
+                      {kind === 'sensors' ? 'Lần cuối hoạt động' : 'Cây được tưới'}
                     </TableHead>
                   </>
                 )}
@@ -537,34 +530,45 @@ function DataTable({
                   ))
                 )
               ) : (
-                filteredWateringEvents.length === 0 ? (
+                wateringEvents.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={4} className="text-center py-6 text-sm text-slate-500">
-                      Chưa có lịch sử tưới cho cây này
+                      Chưa có lịch sử tưới nào
                     </TableCell>
                   </TableRow>
                 ) : (
-                  displayedWateringEvents.map((w) => (
-                    <TableRow
-                      key={w._id}
-                      onClick={() => onRowClick?.(w, `Chi tiết Lần tưới: ${new Date(w.startedAt).toLocaleString()}`)}
-                    >
-                      <TableCell className="text-xs text-black">
-                        {new Date(w.startedAt).toLocaleString()}
-                      </TableCell>
-                      <TableCell className="font-mono text-xs text-black">
-                        {w.durationSec !== null && w.durationSec !== undefined ? `${w.durationSec}s` : 'Đang tưới'}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="text-black border-slate-300">
-                          {w.liters !== null && w.liters !== undefined ? `${w.liters} L` : '0 L'}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-xs text-black">
-                        {w.deviceId}
-                      </TableCell>
-                    </TableRow>
-                  ))
+                  displayedWateringEvents.map((w) => {
+                    const resolvedAssetName =
+                      w.assetName ||
+                      (typeof w.assetId === 'object' && w.assetId !== null ? (w.assetId as any).name : null) ||
+                      assets.find((a) => a._id === (w.assetId || devices.find((d) => d._id === w.deviceId)?.assetId))?.name ||
+                      'Cây số 1'
+
+                    return (
+                      <TableRow
+                        key={w._id}
+                        onClick={() => onRowClick?.(w, `Chi tiết Lần tưới: ${new Date(w.startedAt).toLocaleString()}`)}
+                      >
+                        <TableCell className="text-xs text-black">
+                          {new Date(w.startedAt).toLocaleString()}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs text-black">
+                          {w.durationSec !== null && w.durationSec !== undefined ? `${w.durationSec}s` : 'Đang tưới'}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="text-black border-slate-300">
+                            {w.liters !== null && w.liters !== undefined ? `${w.liters} L` : '0 L'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right text-xs">
+                          <span className="inline-flex items-center gap-1.5 rounded-md bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-xs font-semibold text-emerald-800">
+                            <Sprout className="size-3.5 text-emerald-600" />
+                            {resolvedAssetName}
+                          </span>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })
                 )
               )}
             </TableBody>
@@ -780,6 +784,401 @@ function TelemetryTable({
         </div>
       </CardContent>
     </Card>
+  )
+}
+
+function UsersTable({
+  users,
+  loading,
+  currentUserId,
+  isAdmin = false,
+  onRefresh,
+  onTogglePumpPermission,
+  patchingUserId,
+}: {
+  users?: UserItem[]
+  loading?: boolean
+  currentUserId?: string
+  isAdmin?: boolean
+  onRefresh: () => void
+  onTogglePumpPermission: (user: UserItem, nextState: boolean) => void
+  patchingUserId?: string | null
+}) {
+  const [searchTerm, setSearchTerm] = useState('')
+  const [permissionFilter, setPermissionFilter] = useState<'all' | 'granted' | 'revoked'>('all')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'online' | 'offline'>('all')
+  const [currentPage, setCurrentPage] = useState(1)
+  const PAGE_SIZE = 8
+
+  const safeUsers = useMemo(() => (Array.isArray(users) ? users : []), [users])
+
+  const filteredUsers = useMemo(() => {
+    return safeUsers.filter((u) => {
+      if (!u) return false
+      if (searchTerm.trim()) {
+        const term = searchTerm.toLowerCase().trim()
+        const matchName = (u.username || '').toLowerCase().includes(term)
+        const matchId = (u._id || '').toLowerCase().includes(term)
+        if (!matchName && !matchId) return false
+      }
+      if (permissionFilter === 'granted' && !u.turnOnPump) return false
+      if (permissionFilter === 'revoked' && u.turnOnPump) return false
+      if (statusFilter === 'online' && !u.status_online) return false
+      if (statusFilter === 'offline' && u.status_online) return false
+      return true
+    })
+  }, [safeUsers, searchTerm, permissionFilter, statusFilter])
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [searchTerm, permissionFilter, statusFilter, safeUsers.length])
+
+  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / PAGE_SIZE))
+  const safePage = Math.min(Math.max(1, currentPage), totalPages)
+  const startIndex = (safePage - 1) * PAGE_SIZE
+  const displayedUsers = filteredUsers.slice(startIndex, startIndex + PAGE_SIZE)
+
+  const countGranted = safeUsers.filter((u) => Boolean(u?.turnOnPump)).length
+  const countOnline = safeUsers.filter((u) => Boolean(u?.status_online)).length
+
+  return (
+    <div className="space-y-4">
+      {/* Thẻ thống kê nhanh */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <Card className="border-emerald-100/90 bg-white/95 p-3.5 shadow-xs">
+          <p className="text-[11px] font-medium text-slate-500">Tổng số tài khoản</p>
+          <div className="mt-1 flex items-baseline gap-2">
+            <span className="text-2xl font-bold text-slate-900">{safeUsers.length}</span>
+            <span className="text-xs text-slate-500">người dùng</span>
+          </div>
+        </Card>
+        <Card className="border-emerald-100/90 bg-white/95 p-3.5 shadow-xs">
+          <p className="text-[11px] font-medium text-slate-500">Đang trực tuyến</p>
+          <div className="mt-1 flex items-baseline gap-2">
+            <span className="text-2xl font-bold text-emerald-600">{countOnline}</span>
+            <span className="text-xs text-slate-500">online</span>
+          </div>
+        </Card>
+        <Card className="border-emerald-100/90 bg-white/95 p-3.5 shadow-xs">
+          <p className="text-[11px] font-medium text-slate-500">Đã cấp quyền bật bơm</p>
+          <div className="mt-1 flex items-baseline gap-2">
+            <span className="text-2xl font-bold text-cyan-700">{countGranted}</span>
+            <span className="text-xs text-slate-500">được phép</span>
+          </div>
+        </Card>
+        <Card className="border-emerald-100/90 bg-white/95 p-3.5 shadow-xs">
+          <p className="text-[11px] font-medium text-slate-500">Chưa cấp quyền</p>
+          <div className="mt-1 flex items-baseline gap-2">
+            <span className="text-2xl font-bold text-slate-600">{safeUsers.length - countGranted}</span>
+            <span className="text-xs text-slate-500">chưa cấp</span>
+          </div>
+        </Card>
+      </div>
+
+      {/* Banner quyền phân quyền Admin / User */}
+      {isAdmin ? (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50/90 px-4 py-2.5 text-xs text-emerald-900 shadow-2xs">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="size-4 text-emerald-600 shrink-0" />
+            <span>
+              Bạn đang thao tác với quyền <strong>Quản trị viên (Admin)</strong> — Có toàn quyền phân quyền điều khiển máy bơm cho các tài khoản.
+            </span>
+          </div>
+          <Badge className="w-fit bg-emerald-700 hover:bg-emerald-700 text-white text-[11px] px-2 py-0.5 font-semibold">
+            Admin Mode
+          </Badge>
+        </div>
+      ) : (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50/90 px-4 py-2.5 text-xs text-amber-900 shadow-2xs">
+          <div className="flex items-center gap-2">
+            <ShieldAlert className="size-4 text-amber-600 shrink-0" />
+            <span>
+              <strong>Chế độ chỉ xem:</strong> Bạn đang đăng nhập với tài khoản thường. <strong>Chỉ Quản trị viên (Admin) mới có quyền phân quyền cấp / thu hồi quyền bật máy bơm.</strong>
+            </span>
+          </div>
+          <Badge variant="outline" className="w-fit border-amber-300 bg-amber-100 text-amber-900 text-[11px] px-2 py-0.5 font-medium">
+            Chỉ xem
+          </Badge>
+        </div>
+      )}
+
+      {/* Bảng dữ liệu người dùng */}
+      <Card className="overflow-hidden border-emerald-100/90 bg-white/95 shadow-xs">
+        <CardHeader className="border-b border-emerald-100/70 p-4">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div>
+              <CardTitle className="text-base font-semibold text-slate-900 flex items-center gap-2">
+                <Users className="size-5 text-emerald-600" />
+                Danh sách Người dùng Hệ thống
+              </CardTitle>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Quản lý cấp và thu hồi quyền điều khiển máy bơm tưới (turnOnPump) cùng trạng thái tài khoản
+              </p>
+            </div>
+
+            {/* Thanh công cụ tìm kiếm và lọc */}
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative min-w-[170px]">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Tìm username..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="h-8 w-full rounded-md border border-slate-300 bg-slate-50 pl-8 pr-3 text-xs text-black outline-none focus:border-cyan-600 focus:ring-1 focus:ring-cyan-600"
+                />
+              </div>
+
+              <select
+                value={permissionFilter}
+                onChange={(e) => setPermissionFilter(e.target.value as any)}
+                className="h-8 rounded-md border border-slate-300 bg-slate-50 px-2.5 py-1 text-xs font-medium text-black outline-none hover:bg-slate-100 focus:border-cyan-600"
+              >
+                <option value="all">Quyền bơm: Tất cả</option>
+                <option value="granted">Đã cấp quyền</option>
+                <option value="revoked">Chưa cấp quyền</option>
+              </select>
+
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as any)}
+                className="h-8 rounded-md border border-slate-300 bg-slate-50 px-2.5 py-1 text-xs font-medium text-black outline-none hover:bg-slate-100 focus:border-cyan-600"
+              >
+                <option value="all">Trạng thái: Tất cả</option>
+                <option value="online">Trực tuyến</option>
+                <option value="offline">Ngoại tuyến</option>
+              </select>
+
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={onRefresh}
+                disabled={loading}
+                className="h-8 gap-1 border-slate-300 bg-slate-100 hover:bg-slate-200 text-black text-xs font-semibold px-2.5 shadow-none"
+              >
+                <RefreshCw className={`size-3.5 text-black ${loading ? 'animate-spin' : ''}`} />
+                Làm mới
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+
+        <CardContent className="p-0">
+          <div className="w-full overflow-x-auto">
+            <Table>
+              <TableHeader className="bg-slate-50/75">
+                <TableRow>
+                  <TableHead className="font-semibold text-slate-800">Tài khoản / Người dùng</TableHead>
+                  <TableHead className="font-semibold text-slate-800">Trạng thái kết nối</TableHead>
+                  <TableHead className="font-semibold text-slate-800">Quyền bật máy bơm</TableHead>
+                  <TableHead className="font-semibold text-slate-800">Ngày đăng ký</TableHead>
+                  <TableHead className="text-right font-semibold text-slate-800">Cấp / Thu hồi quyền</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {loading && safeUsers.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-center py-8 text-sm text-slate-500">
+                      <div className="flex flex-col items-center justify-center gap-2">
+                        <RefreshCw className="size-5 animate-spin text-emerald-600" />
+                        <span>Đang tải danh sách người dùng...</span>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : displayedUsers.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-center py-10 text-sm text-slate-500">
+                      {safeUsers.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center gap-2">
+                          <Users className="size-8 text-slate-300" />
+                          <p className="font-semibold text-slate-700">Chưa có người dùng nào hoặc chưa nạp được dữ liệu</p>
+                          <p className="text-xs text-slate-400 max-w-md">
+                            Nếu bạn vừa thêm tính năng, hãy chắc chắn server backend đã được khởi động lại để nhận route mới (/api/users).
+                          </p>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={onRefresh}
+                            className="mt-2 h-8 gap-1.5 border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-semibold px-3"
+                          >
+                            <RefreshCw className={`size-3.5 ${loading ? 'animate-spin' : ''}`} />
+                            Tải lại dữ liệu
+                          </Button>
+                        </div>
+                      ) : (
+                        'Không có người dùng phù hợp với bộ lọc'
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  displayedUsers.map((u) => {
+                    const isSelf = currentUserId && (String(currentUserId) === String(u?._id))
+                    const isPatching = patchingUserId === u?._id
+                    const isTargetAdmin = u?.role === 'admin' || u?.username?.toLowerCase() === 'admin'
+
+                    return (
+                      <TableRow key={u?._id || Math.random()} className="hover:bg-emerald-50/40 transition-colors">
+                        {/* Cột 1: Tên đăng nhập & Avatar */}
+                        <TableCell>
+                          <div className="flex items-center gap-2.5">
+                            <div className="grid size-8 place-items-center rounded-lg bg-emerald-100/90 text-emerald-800 font-bold text-xs uppercase">
+                              {(u?.username || 'U').slice(0, 2).toUpperCase()}
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-semibold text-xs text-slate-900">{u?.username || 'Chưa đặt tên'}</span>
+                                {isTargetAdmin && (
+                                  <Badge className="bg-amber-100 hover:bg-amber-100 text-amber-800 border-amber-300 text-[10px] px-1.5 py-0 h-4 font-semibold">
+                                    Admin
+                                  </Badge>
+                                )}
+                                {isSelf && (
+                                  <Badge className="bg-emerald-600 text-white hover:bg-emerald-600 text-[10px] px-1.5 py-0 h-4">
+                                    Bạn
+                                  </Badge>
+                                )}
+                              </div>
+                              <p className="font-mono text-[10px] text-slate-400">{u?._id || '—'}</p>
+                            </div>
+                          </div>
+                        </TableCell>
+
+                        {/* Cột 2: Trạng thái Online */}
+                        <TableCell>
+                          {u.status_online ? (
+                            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                              <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
+                              Trực tuyến
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full">
+                              <span className="size-2 rounded-full bg-slate-400" />
+                              Ngoại tuyến
+                            </span>
+                          )}
+                        </TableCell>
+
+                        {/* Cột 3: Trạng thái quyền turnOnPump */}
+                        <TableCell>
+                          {u.turnOnPump ? (
+                            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 border border-emerald-300 px-2.5 py-1 rounded-md shadow-2xs">
+                              <ShieldCheck className="size-4 text-emerald-600 shrink-0" />
+                              Có quyền
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-rose-700 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-md">
+                              <ShieldAlert className="size-4 text-rose-500 shrink-0" />
+                              Không có quyền
+                            </span>
+                          )}
+                        </TableCell>
+
+                        {/* Cột 4: Ngày tạo */}
+                        <TableCell className="text-xs text-slate-600">
+                          {u.createdAt ? new Date(u.createdAt).toLocaleDateString('vi-VN', {
+                            year: 'numeric',
+                            month: '2-digit',
+                            day: '2-digit',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          }) : '—'}
+                        </TableCell>
+
+                        {/* Cột 5: Thao tác Cấp / Thu hồi quyền */}
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end">
+                            {isTargetAdmin ? (
+                              <span
+                                className="inline-flex items-center justify-center text-xs text-slate-400 font-mono px-3 select-none"
+                                title="Tài khoản Quản trị viên (Admin) không tự cấp/thu hồi quyền của chính mình"
+                              >
+                                —
+                              </span>
+                            ) : !isAdmin ? (
+                              <div
+                                className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400 bg-slate-100 border border-slate-200 px-2.5 py-1.5 rounded-md cursor-not-allowed select-none"
+                                title="Chỉ tài khoản Quản trị viên (Admin) mới có quyền phân quyền cấp / thu hồi quyền điều khiển máy bơm"
+                              >
+                                <Lock className="size-3 text-slate-400" />
+                                <span>Chỉ Admin</span>
+                              </div>
+                            ) : u.turnOnPump ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={isPatching}
+                                onClick={() => onTogglePumpPermission(u, false)}
+                                className="h-8 gap-1.5 border-rose-200 bg-rose-50/80 hover:bg-rose-100 text-rose-700 hover:text-rose-800 text-xs font-medium px-3 transition-colors shadow-2xs"
+                                title="Bấm để thu hồi quyền bật máy bơm (quyền sẽ tự động chuyển về cho Admin)"
+                              >
+                                {isPatching ? (
+                                  <RefreshCw className="size-3.5 animate-spin text-rose-600" />
+                                ) : (
+                                  <ShieldAlert className="size-3.5 text-rose-600" />
+                                )}
+                                Thu hồi quyền
+                              </Button>
+                            ) : (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={isPatching}
+                                onClick={() => onTogglePumpPermission(u, true)}
+                                className="h-8 gap-1.5 border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-semibold px-3 transition-colors shadow-2xs"
+                                title="Bấm để cấp quyền bật máy bơm (các tài khoản khác sẽ tự động bị thu hồi)"
+                              >
+                                {isPatching ? (
+                                  <RefreshCw className="size-3.5 animate-spin text-emerald-600" />
+                                ) : (
+                                  <ShieldCheck className="size-3.5 text-emerald-600" />
+                                )}
+                                Cấp quyền
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </div>
+
+          {/* Phân trang */}
+          {totalPages > 1 && (
+            <div className="border-t border-slate-200/80 px-4 py-3 flex items-center justify-between text-xs text-slate-500 bg-slate-50/50">
+              <span>
+                Hiển thị {startIndex + 1} - {Math.min(startIndex + PAGE_SIZE, filteredUsers.length)} trên tổng {filteredUsers.length} tài khoản
+              </span>
+              <div className="flex items-center gap-1">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={safePage <= 1}
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  className="h-7 w-7 p-0 border-slate-300"
+                >
+                  <ChevronLeft className="size-3.5" />
+                </Button>
+                <span className="px-2 font-medium text-slate-700">
+                  {safePage} / {totalPages}
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={safePage >= totalPages}
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  className="h-7 w-7 p-0 border-slate-300"
+                >
+                  <ChevronRight className="size-3.5" />
+                </Button>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   )
 }
 
@@ -1161,13 +1560,13 @@ function DetailModal({
       try {
         const d = new Date(val)
         if (!isNaN(d.getTime())) return d.toLocaleString('vi-VN')
-      } catch {}
+      } catch { }
     }
     if (key.includes('At') && typeof val === 'string') {
       try {
         const d = new Date(val)
         if (!isNaN(d.getTime())) return d.toLocaleString('vi-VN')
-      } catch {}
+      } catch { }
     }
     if (key === 'durationSec') return `${val} giây`
     if (key === 'liters') return `${val} Lít`
@@ -1407,8 +1806,20 @@ export default function Page() {
   } | null>(null)
   const [user, setUser] = useState<any>(null)
 
+  // Quản lý người dùng & phân quyền
+  const [usersList, setUsersList] = useState<UserItem[]>([])
+  const [usersLoading, setUsersLoading] = useState<boolean>(false)
+  const [patchingUserId, setPatchingUserId] = useState<string | null>(null)
+  const [userActionMsg, setUserActionMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+
   // Data states
   const [devices, setDevices] = useState<DeviceItem[]>([])
+  const [telemetryByDevice, setTelemetryByDevice] = useState<
+    Record<string, GreenhouseTelemetry>
+  >({})
+  const [pumpStatesByDevice, setPumpStatesByDevice] = useState<
+    Record<string, boolean>
+  >({})
   const [wateringEvents, setWateringEvents] = useState<WateringEventItem[]>([])
   const [assets, setAssets] = useState<AssetItem[]>([])
   const [telemetryLogs, setTelemetryLogs] = useState<any[]>([])
@@ -1424,7 +1835,6 @@ export default function Page() {
   const pumpStartTimeRef = useRef<number | null>(null)
 
   // Settings view states (cấu hình Attribute ngưỡng an toàn)
-  const [selectedSettingsAssetId, setSelectedSettingsAssetId] = useState<string>('')
   const [settingSoilMin, setSettingSoilMin] = useState<number>(30)
   const [settingSoilMax, setSettingSoilMax] = useState<number>(70)
   const [settingWaterMin, setSettingWaterMin] = useState<number>(20)
@@ -1440,39 +1850,24 @@ export default function Page() {
     devicesRef.current = devices
   }, [devices])
 
-  // Đồng bộ chọn cây mặc định ở Settings
+  // Nạp dữ liệu Attribute ban đầu từ bất kỳ thiết bị nào có cấu hình
   useEffect(() => {
-    if (!selectedSettingsAssetId && assets.length > 0) {
-      setSelectedSettingsAssetId(assets[0]._id)
+    if (devices.length === 0) return
+    const devWithAttr = devices.find(
+      (d) => d.attributes && typeof d.attributes.safe_min_soil_humidity === 'number'
+    )
+    const attr = devWithAttr?.attributes
+    if (attr) {
+      if (typeof attr.safe_min_soil_humidity === 'number') setSettingSoilMin(attr.safe_min_soil_humidity)
+      if (typeof attr.safe_max_soil_humidity === 'number') setSettingSoilMax(attr.safe_max_soil_humidity)
+      if (typeof attr.safe_min_water_level === 'number') setSettingWaterMin(attr.safe_min_water_level)
+      if (typeof attr.safe_max_water_level === 'number') setSettingWaterMax(attr.safe_max_water_level)
     }
-  }, [assets, selectedSettingsAssetId])
-
-  // Nạp dữ liệu Attribute của device tương ứng vào 2 thanh bar khi chọn cây
-  useEffect(() => {
-    if (!selectedSettingsAssetId) return
-    const matchedDev = devices.find((d) => {
-      const dAssetId = typeof d.assetId === 'object' && d.assetId !== null ? (d.assetId as any)._id : d.assetId
-      return String(dAssetId) === String(selectedSettingsAssetId)
-    })
-    const attr = matchedDev?.attributes
-    setSettingSoilMin(typeof attr?.safe_min_soil_humidity === 'number' ? attr.safe_min_soil_humidity : 30)
-    setSettingSoilMax(typeof attr?.safe_max_soil_humidity === 'number' ? attr.safe_max_soil_humidity : 70)
-    setSettingWaterMin(typeof attr?.safe_min_water_level === 'number' ? attr.safe_min_water_level : 20)
-    setSettingWaterMax(typeof attr?.safe_max_water_level === 'number' ? attr.safe_max_water_level : 95)
     setSettingsSaveMsg(null)
-  }, [selectedSettingsAssetId, devices])
+  }, [devices])
 
-  // Lưu cấu hình Attribute vào DB
+  // Lưu cấu hình Attribute cho toàn bộ attribute/device vào DB
   const handleSaveAttributes = async () => {
-    const matchedDev = devices.find((d) => {
-      const dAssetId = typeof d.assetId === 'object' && d.assetId !== null ? (d.assetId as any)._id : d.assetId
-      return String(dAssetId) === String(selectedSettingsAssetId)
-    })
-    if (!matchedDev) {
-      setSettingsSaveMsg({ type: 'error', text: 'Cây đã chọn chưa được gán thiết bị nào!' })
-      return
-    }
-
     setSavingSettings(true)
     setSettingsSaveMsg(null)
     try {
@@ -1483,54 +1878,46 @@ export default function Page() {
         safe_max_water_level: settingWaterMax,
       }
 
-      const devIdParam = encodeURIComponent(matchedDev._id)
-      let saved = false
-
-      // 1. Thử gửi tới PUT /api/devices/:id/attributes
+      // 1. Thử gửi tới API cập nhật toàn bộ: PUT /api/devices/attributes/all
+      let bulkSaved = false
       try {
-        await apiRequest(`/api/devices/${devIdParam}/attributes`, {
+        await apiRequest('/api/devices/attributes/all', {
           method: 'PUT',
           body: JSON.stringify(payload),
         })
-        saved = true
-      } catch (err: any) {
-        // 2. Nếu server chưa restart (trả về 404 Not Found), fallback sang PUT /api/devices/:id
-        if (err.message?.includes('Not Found') || err.message?.includes('404')) {
-          try {
-            await apiRequest(`/api/devices/${devIdParam}`, {
-              method: 'PUT',
-              body: JSON.stringify(payload),
-            })
-            saved = true
-          } catch (err2: any) {
-            // 3. Nếu thiết bị chưa có trong DB, tự động upsert qua POST /api/devices
-            if (err2.message?.includes('Not Found') || err2.message?.includes('404') || err2.message?.includes('Khong tim thay')) {
-              await apiRequest(`/api/devices`, {
-                method: 'POST',
-                body: JSON.stringify({ id: matchedDev._id, name: matchedDev.name || matchedDev._id, ...payload }),
-              })
-              saved = true
-            } else {
-              throw err2
-            }
-          }
-        } else {
-          throw err
-        }
+        bulkSaved = true
+      } catch {
+        bulkSaved = false
       }
 
-      // Cập nhật ngay trong state devices để Dashboard nhận tức thì
-      setDevices((prev) =>
-        prev.map((d) =>
-          d._id === matchedDev._id
-            ? { ...d, attributes: { ...d.attributes, ...payload } }
-            : d
+      // 2. Nếu bulk chưa xong hoặc fallback: cập nhật cho từng thiết bị
+      if (!bulkSaved && devices.length > 0) {
+        await Promise.all(
+          devices.map((d) =>
+            apiRequest(`/api/devices/${encodeURIComponent(d._id)}/attributes`, {
+              method: 'PUT',
+              body: JSON.stringify(payload),
+            }).catch(async () => {
+              await apiRequest(`/api/devices/${encodeURIComponent(d._id)}`, {
+                method: 'PUT',
+                body: JSON.stringify(payload),
+              }).catch(() => null)
+            })
+          )
         )
+      }
+
+      // 3. Cập nhật state devices để Dashboard nhận tức thì cho toàn bộ thiết bị
+      setDevices((prev) =>
+        prev.map((d) => ({
+          ...d,
+          attributes: { ...d.attributes, ...payload },
+        }))
       )
 
       setSettingsSaveMsg({
         type: 'success',
-        text: `Đã lưu thành công cấu hình Attribute cho thiết bị ${matchedDev.name || matchedDev._id}!`,
+        text: 'Đã lưu và áp dụng cấu hình ngưỡng an toàn cho toàn bộ thiết bị và cây trồng trong hệ thống!',
       })
       setTimeout(() => setSettingsSaveMsg(null), 4000)
     } catch (err: any) {
@@ -1581,59 +1968,38 @@ export default function Page() {
     return () => clearInterval(interval)
   }, [pumpOn, pumpStartTime])
 
-  const [selectedHistoryAssetId, setSelectedHistoryAssetId] = useState<string>('all')
   const [historyLoading, setHistoryLoading] = useState<boolean>(false)
 
-  // Hàm tải lại lịch sử tưới nước từ Backend (hỗ trợ filter theo assetId)
-  const refreshWateringHistory = async (targetAssets?: AssetItem[], targetAssetId?: string) => {
-    const listToFetch = targetAssets || assets
-    const filterId = targetAssetId !== undefined ? targetAssetId : selectedHistoryAssetId
-    if (!listToFetch || listToFetch.length === 0) return
+  // Hàm tải lại toàn bộ lịch sử tưới nước từ Backend (không lọc theo cây)
+  const refreshWateringHistory = async (targetAssets?: AssetItem[]) => {
+    setHistoryLoading(true)
     try {
-      if (filterId && filterId !== 'all') {
-        const list = await apiRequest<WateringEventItem[]>(`/api/assets/${filterId}/watering-history`).catch(() => [])
-        if (Array.isArray(list)) {
-          const formatted = list.map((item) => ({ ...item, assetId: item.assetId || filterId }))
-          formatted.sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
-          setWateringEvents(formatted)
-        }
-      } else {
+      const assetSource = targetAssets || assets
+      let list = await apiRequest<WateringEventItem[]>('/api/assets/watering-history').catch(async () => {
+        return await apiRequest<WateringEventItem[]>('/api/assets/all/watering-history').catch(() => [])
+      })
+      if (!Array.isArray(list) || list.length === 0) {
         const allHistories: WateringEventItem[] = []
-        for (const ast of listToFetch) {
-          const list = await apiRequest<WateringEventItem[]>(`/api/assets/${ast._id}/watering-history`).catch(() => [])
-          if (Array.isArray(list)) {
-            list.forEach((item) => {
-              allHistories.push({ ...item, assetId: item.assetId || ast._id })
-            })
-          }
+        for (const ast of assetSource) {
+          const sub = await apiRequest<WateringEventItem[]>(`/api/assets/${ast._id}/watering-history`).catch(() => [])
+          if (Array.isArray(sub)) allHistories.push(...sub)
         }
-        allHistories.sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
-        setWateringEvents(allHistories)
+        list = allHistories
+      }
+      if (Array.isArray(list)) {
+        const formatted = list.map((item) => {
+          const linkedDev = devices.find((d) => d._id === item.deviceId)
+          const linkedAsset = assetSource.find((a) => a._id === (item.assetId || (typeof linkedDev?.assetId === 'object' ? (linkedDev?.assetId as any)?._id : linkedDev?.assetId)))
+          return {
+            ...item,
+            assetName: item.assetName || (typeof item.assetId === 'object' && item.assetId !== null ? (item.assetId as any).name : null) || linkedAsset?.name || 'Cây số 1',
+          }
+        })
+        formatted.sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
+        setWateringEvents(formatted)
       }
     } catch (err) {
       console.error('Lỗi tải lại lịch sử tưới:', err)
-    }
-  }
-
-  // Hàm gửi request GET khi người dùng chọn lọc cây ở bảng Nhật ký tưới nước
-  const handleSelectAssetHistory = async (assetId: string) => {
-    setSelectedHistoryAssetId(assetId)
-    setHistoryLoading(true)
-    try {
-      if (assetId === 'all') {
-        await refreshWateringHistory(assets, 'all')
-      } else {
-        const list = await apiRequest<WateringEventItem[]>(`/api/assets/${assetId}/watering-history`).catch(() => [])
-        if (Array.isArray(list)) {
-          const formatted = list.map((item) => ({ ...item, assetId: item.assetId || assetId }))
-          formatted.sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
-          setWateringEvents(formatted)
-        } else {
-          setWateringEvents([])
-        }
-      }
-    } catch (err) {
-      console.error('Lỗi tải lịch sử tưới theo cây:', err)
     } finally {
       setHistoryLoading(false)
     }
@@ -1756,6 +2122,100 @@ export default function Page() {
     }
   }
 
+  // Hàm tải danh sách người dùng cho tab Quản lý người dùng
+  const fetchUsers = async () => {
+    setUsersLoading(true)
+    try {
+      const data = await apiRequest<UserItem[]>('/api/users').catch(() => [])
+      setUsersList(Array.isArray(data) ? data : [])
+    } catch (err: any) {
+      console.error('Lỗi tải danh sách người dùng:', err)
+    } finally {
+      setUsersLoading(false)
+    }
+  }
+
+  // Hàm cấp / thu hồi quyền bật máy bơm (patch field turnOnPump trong User)
+  const handleToggleUserPumpPermission = async (targetUser: UserItem, nextState: boolean) => {
+    const isCurrentUserAdmin = Boolean(
+      user && (user.role === 'admin' || user.username?.toLowerCase() === 'admin')
+    )
+    if (!isCurrentUserAdmin) {
+      setUserActionMsg({
+        type: 'error',
+        text: 'Chỉ tài khoản Quản trị viên (Admin) mới có quyền phân quyền cấp / thu hồi máy bơm!',
+      })
+      setTimeout(() => setUserActionMsg(null), 4000)
+      return
+    }
+
+    const isTargetAdmin = targetUser.role === 'admin' || targetUser.username?.toLowerCase() === 'admin'
+    if (isTargetAdmin) {
+      setUserActionMsg({
+        type: 'error',
+        text: 'Không thể cấp hoặc thu hồi quyền của chính tài khoản Quản trị viên (Admin)!',
+      })
+      setTimeout(() => setUserActionMsg(null), 3000)
+      return
+    }
+
+    setPatchingUserId(targetUser._id)
+    setUserActionMsg(null)
+
+    // Optimistic UI update:
+    // - Nếu cấp quyền (true): Chỉ user này có quyền, toàn bộ các user khác bị thu hồi
+    // - Nếu thu hồi quyền (false): User này mất quyền, quyền chuyển về cho tài khoản Admin
+    setUsersList((prev) =>
+      prev.map((u) => {
+        if (nextState) {
+          return { ...u, turnOnPump: u._id === targetUser._id }
+        } else {
+          if (u._id === targetUser._id) return { ...u, turnOnPump: false }
+          if (u.role === 'admin' || u.username?.toLowerCase() === 'admin') return { ...u, turnOnPump: true }
+          return u
+        }
+      })
+    )
+
+    try {
+      const res = await apiRequest<{ message?: string; user?: UserItem }>(
+        `/api/users/${targetUser._id}/turnOnPump`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({ turnOnPump: nextState }),
+        }
+      )
+
+      // Đồng bộ lại danh sách users thực tế từ backend
+      await fetchUsers()
+
+      // Đồng bộ lại tài khoản hiện tại
+      const me = await apiRequest('/api/auth/me').catch(() => null)
+      if (me?.user) setUser(me.user)
+
+      const actionText = nextState ? 'Cấp quyền bật máy bơm' : 'Thu hồi quyền bật máy bơm'
+      setUserActionMsg({
+        type: 'success',
+        text: res.message || `${actionText} cho tài khoản "${targetUser.username}" thành công!`,
+      })
+      setTimeout(() => setUserActionMsg(null), 4000)
+    } catch (err: any) {
+      console.error('Lỗi cập nhật quyền turnOnPump:', err)
+      // Rollback bằng cách fetch lại dữ liệu thực tế từ backend
+      await fetchUsers()
+      const me = await apiRequest('/api/auth/me').catch(() => null)
+      if (me?.user) setUser(me.user)
+
+      setUserActionMsg({
+        type: 'error',
+        text: err.message || 'Không thể cập nhật quyền người dùng',
+      })
+      setTimeout(() => setUserActionMsg(null), 5000)
+    } finally {
+      setPatchingUserId(null)
+    }
+  }
+
   // Tải dữ liệu ban đầu
   const fetchData = async () => {
     setLoading(true)
@@ -1763,6 +2223,31 @@ export default function Page() {
       // 1. Lấy danh sách thiết bị
       const devList = await apiRequest<DeviceItem[]>('/api/devices').catch(() => [])
       setDevices(devList)
+      setPumpStatesByDevice((prev) => ({
+        ...prev,
+        ...Object.fromEntries(
+          devList.map((device) => [device._id, device.pumpState === 'ON']),
+        ),
+      }))
+
+      const telemetryEntries = await Promise.all(
+        devList.map(async (device) => {
+          const detail = await apiRequest<{
+            latestTelemetry?: RawTelemetry | null
+          }>(
+            `/api/devices/${encodeURIComponent(device._id)}`,
+          ).catch(() => null)
+          const snapshot = normalizeTelemetry(detail?.latestTelemetry)
+          return snapshot ? ([device._id, snapshot] as const) : null
+        }),
+      )
+      setTelemetryByDevice((prev) => {
+        const next = { ...prev }
+        for (const entry of telemetryEntries) {
+          if (entry) next[entry[0]] = entry[1]
+        }
+        return next
+      })
 
       // 2. Lấy danh sách Assets (Cây / Khu vườn)
       const assetList = await apiRequest<AssetItem[]>('/api/assets').catch(() => [])
@@ -1789,6 +2274,9 @@ export default function Page() {
       // 5. Lấy thông tin user hiện tại nếu có token
       const me = await apiRequest('/api/auth/me').catch(() => null)
       if (me?.user) setUser(me.user)
+
+      // 6. Nạp danh sách người dùng cho tab Quản lý người dùng
+      await fetchUsers()
     } catch (err) {
       console.error('Lỗi nạp dữ liệu:', err)
     } finally {
@@ -1799,6 +2287,13 @@ export default function Page() {
   useEffect(() => {
     fetchData()
   }, [])
+
+  // Tự động tải danh sách người dùng mỗi khi người dùng chuyển sang tab Quản lý người dùng
+  useEffect(() => {
+    if (view === 'users') {
+      fetchUsers()
+    }
+  }, [view])
 
   // Kết nối WebSocket để nhận dữ liệu Telemetry thời gian thực
   useEffect(() => {
@@ -1824,6 +2319,20 @@ export default function Page() {
         try {
           const msg = JSON.parse(event.data)
           if (msg.type === 'TELEMETRY' && msg.data) {
+            const snapshot = normalizeTelemetry({
+              temperature: msg.data.temperature ?? null,
+              humidity: msg.data.humidity ?? null,
+              soil_humidity: msg.data.soil_humidity ?? null,
+              water_level: msg.data.water_level ?? null,
+              timestamp: msg.data.timestamp ?? new Date().toISOString(),
+            })
+            if (snapshot) {
+              setTelemetryByDevice((prev) => ({
+                ...prev,
+                [msg.deviceId]: snapshot,
+              }))
+            }
+
             // Tìm deviceId tương ứng với Asset đang chọn trên Dashboard (quan hệ 1 - 1)
             const currentAssetId = selectedDashboardAssetIdRef.current
             const devList = devicesRef.current
@@ -1878,6 +2387,12 @@ export default function Page() {
               setElapsedSeconds(0)
             }
           } else if (msg.type === 'PUMP_STATE') {
+            const pumpStateOn = msg.data?.state === 'ON'
+            setPumpStatesByDevice((prev) => ({
+              ...prev,
+              [msg.deviceId]: pumpStateOn,
+            }))
+
             const currentAssetId = selectedDashboardAssetIdRef.current
             const devList = devicesRef.current
             const matchedDev = devList.find((d) => {
@@ -1914,6 +2429,12 @@ export default function Page() {
 
   // Điều khiển máy bơm
   const handleTogglePump = async (checked: boolean) => {
+    // Kiểm tra quyền của tài khoản người dùng hiện tại
+    if (checked && user && user.turnOnPump === false) {
+      alert('Tài khoản của bạn chưa được cấp quyền bật máy bơm nước (turnOnPump: false). Vui lòng liên hệ quản trị viên để được cấp quyền.')
+      return
+    }
+
     setPumpOn(checked)
     const currentAssetId = selectedDashboardAssetIdRef.current
     const devList = devicesRef.current
@@ -1922,6 +2443,12 @@ export default function Page() {
       return String(dAssetId) === String(currentAssetId)
     })
     const targetDevId = matchedDev ? matchedDev._id : (devList.length > 0 ? devList[0]._id : '')
+    if (targetDevId) {
+      setPumpStatesByDevice((prev) => ({
+        ...prev,
+        [targetDevId]: checked,
+      }))
+    }
 
     if (checked) {
       // Bật toggle: Đánh dấu chờ telemetry đầu tiên để tính giờ
@@ -1954,6 +2481,12 @@ export default function Page() {
         console.error('Lỗi gửi lệnh bơm:', err)
         // Rollback nếu gửi lệnh lỗi
         setPumpOn(!checked)
+        if (targetDevId) {
+          setPumpStatesByDevice((prev) => ({
+            ...prev,
+            [targetDevId]: !checked,
+          }))
+        }
         waitingFirstTelemetryRef.current = false
         setWaitingFirstTelemetry(false)
         setPumpStartTime(null)
@@ -1969,24 +2502,6 @@ export default function Page() {
     localStorage.removeItem('auth_token')
     setUser(null)
   }
-
-  const selectedDashboardAsset = useMemo(
-    () =>
-      assets.find((asset) => asset._id === selectedDashboardAssetId) ?? null,
-    [assets, selectedDashboardAssetId],
-  )
-
-  const selectedAssetDevices = useMemo(
-    () =>
-      devices.filter((device) => {
-        const assetId =
-          typeof device.assetId === 'object' && device.assetId !== null
-            ? (device.assetId as any)._id
-            : device.assetId
-        return String(assetId) === String(selectedDashboardAssetId)
-      }),
-    [devices, selectedDashboardAssetId],
-  )
 
   if (auth) {
     return (
@@ -2026,7 +2541,12 @@ export default function Page() {
               key={item.id}
               variant={view === item.id ? 'secondary' : 'ghost'}
               className="justify-start gap-3"
-              onClick={() => setView(item.id)}
+              onClick={() => {
+                setView(item.id)
+                if (item.id === 'users') {
+                  fetchUsers()
+                }
+              }}
             >
               <item.icon />
               {item.label}
@@ -2250,11 +2770,17 @@ export default function Page() {
                       )}
                     </span>
                     <span className="text-[11px] text-slate-500">
-                      {pumpOn
-                        ? (pumpStartTime !== null
-                            ? 'Thời gian tính từ lúc nhận telemetry đầu tiên'
-                            : 'Đang chờ nhận telemetry đầu tiên để tính giờ...')
-                        : 'Gửi lệnh điều khiển bật/tắt thiết bị'}
+                      {user && user.turnOnPump === false ? (
+                        <span className="text-rose-600 font-medium inline-flex items-center gap-1">
+                          <ShieldAlert className="size-3" /> Chưa được cấp quyền bật máy bơm
+                        </span>
+                      ) : pumpOn ? (
+                        pumpStartTime !== null
+                          ? 'Thời gian tính từ lúc nhận telemetry đầu tiên'
+                          : 'Đang chờ nhận telemetry đầu tiên để tính giờ...'
+                      ) : (
+                        'Gửi lệnh điều khiển bật/tắt thiết bị'
+                      )}
                     </span>
                   </div>
                   <Switch
@@ -2267,11 +2793,17 @@ export default function Page() {
               </div>
 
               <Greenhouse3D
-                asset={selectedDashboardAsset}
-                devices={selectedAssetDevices}
-                pumpOn={pumpOn}
-                waitingForTelemetry={waitingFirstTelemetry}
-                elapsedSeconds={elapsedSeconds}
+                assets={assets}
+                devices={devices}
+                telemetryByDevice={telemetryByDevice}
+                pumpStatesByDevice={pumpStatesByDevice}
+                onLayoutSaved={(assetId, layout) =>
+                  setAssets((prev) =>
+                    prev.map((asset) =>
+                      asset._id === assetId ? { ...asset, layout } : asset,
+                    ),
+                  )
+                }
               />
 
               <SectionHeading eyebrow="03 / Dữ liệu lịch sử đo đạc" title="Biểu đồ phân tích" />
@@ -2373,8 +2905,6 @@ export default function Page() {
                   wateringEvents={wateringEvents}
                   assets={assets}
                   loading={loading || historyLoading}
-                  selectedAssetId={selectedHistoryAssetId}
-                  onSelectAssetHistory={handleSelectAssetHistory}
                   onRowClick={(data, title) => setDetailModalData({ data, title, kind: 'history' })}
                 />
               </div>
@@ -2438,9 +2968,45 @@ export default function Page() {
                 wateringEvents={wateringEvents}
                 assets={assets}
                 loading={loading || historyLoading}
-                selectedAssetId={selectedHistoryAssetId}
-                onSelectAssetHistory={handleSelectAssetHistory}
                 onRowClick={(data, title) => setDetailModalData({ data, title, kind: 'history' })}
+              />
+            </>
+          )}
+
+          {view === 'users' && (
+            <>
+              <SectionHeading eyebrow="Hệ thống & Phân quyền" title="Quản lý Người dùng & Quyền bật máy bơm" />
+              {userActionMsg && (
+                <div
+                  className={`mb-4 flex items-center justify-between rounded-lg p-3 text-xs font-medium border ${userActionMsg.type === 'success'
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                    : 'bg-rose-50 border-rose-200 text-rose-800'
+                    }`}
+                >
+                  <div className="flex items-center gap-2">
+                    {userActionMsg.type === 'success' ? (
+                      <CheckCircle2 className="size-4 text-emerald-600" />
+                    ) : (
+                      <AlertTriangle className="size-4 text-rose-600" />
+                    )}
+                    <span>{userActionMsg.text}</span>
+                  </div>
+                  <button
+                    onClick={() => setUserActionMsg(null)}
+                    className="text-slate-400 hover:text-slate-600 transition-colors"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                </div>
+              )}
+              <UsersTable
+                users={usersList}
+                loading={usersLoading}
+                currentUserId={user?.id || user?._id}
+                isAdmin={Boolean(user && (user.role === 'admin' || user.username?.toLowerCase() === 'admin'))}
+                onRefresh={fetchUsers}
+                onTogglePumpPermission={handleToggleUserPumpPermission}
+                patchingUserId={patchingUserId}
               />
             </>
           )}
@@ -2455,8 +3021,42 @@ export default function Page() {
                     <Input readOnly value={user?.username || 'Khách (Chưa đăng nhập)'} className="text-black bg-slate-50 font-medium" />
                   </div>
                   <div>
+                    <Label>Vai trò hệ thống</Label>
+                    <div className="mt-1 flex items-center gap-2">
+                      {user && (user.role === 'admin' || user.username?.toLowerCase() === 'admin') ? (
+                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-300 px-2.5 py-1 rounded-md">
+                          Quản trị viên (Admin)
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-700 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-md">
+                          Người dùng (User)
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div>
                     <Label>Trạng thái</Label>
                     <Input readOnly value={user?.status_online ? 'Trực tuyến' : 'Ngoại tuyến'} className="text-black bg-slate-50 font-medium" />
+                  </div>
+                  <div>
+                    <Label>Quyền bật máy bơm (turnOnPump)</Label>
+                    <div className="mt-1 flex items-center gap-2">
+                      {user?.turnOnPump ? (
+                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 border border-emerald-300 px-2.5 py-1 rounded-md">
+                          <ShieldCheck className="size-4 text-emerald-600" />
+                          Đã cấp quyền bật máy bơm
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 text-xs font-medium text-rose-700 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-md">
+                          <ShieldAlert className="size-4 text-rose-500" />
+                          Chưa được cấp quyền bật bơm
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <Label>Độ ưu tiên</Label>
+                    <Input readOnly value={`Cấp độ ${user?.priority ?? 1}`} className="text-black bg-slate-50 font-medium" />
                   </div>
                   <div>
                     <Label>Vị trí canh tác</Label>
@@ -2485,187 +3085,122 @@ export default function Page() {
                           Cài đặt thuộc tính an toàn (Attribute)
                         </CardTitle>
                         <p className="text-xs text-slate-500 mt-1">
-                          Chọn cây để xác định thiết bị điều khiển và cấu hình ngưỡng kích hoạt tưới/cảnh báo.
+                          Cấu hình ngưỡng độ ẩm đất và mức nước an toàn áp dụng đồng bộ cho toàn bộ cây trồng & thiết bị.
                         </p>
                       </div>
 
-                      {/* Dropdown chọn Cây (Asset) */}
-                      <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50/50 px-3 py-1.5">
-                        <Sprout className="size-4 text-emerald-600 shrink-0" />
-                        <Label htmlFor="settings-tree-select" className="text-xs font-semibold text-black whitespace-nowrap">
-                          Chọn Cây:
-                        </Label>
-                        <select
-                          id="settings-tree-select"
-                          value={selectedSettingsAssetId}
-                          onChange={(e) => setSelectedSettingsAssetId(e.target.value)}
-                          className="h-8 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-black outline-none transition-colors hover:bg-slate-50 focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600"
-                        >
-                          {assets.length === 0 ? (
-                            <option value="">-- Chưa có cây/khu vườn nào --</option>
-                          ) : (
-                            assets.map((a) => {
-                              const linkedDev = devices.find((d) => {
-                                const dAssetId = typeof d.assetId === 'object' && d.assetId !== null ? (d.assetId as any)._id : d.assetId
-                                return String(dAssetId) === String(a._id)
-                              })
-                              return (
-                                <option key={a._id} value={a._id}>
-                                  {a.name} ({a.type}) {linkedDev ? `[${linkedDev.name || linkedDev._id}]` : '[Chưa có thiết bị]'}
-                                </option>
-                              )
-                            })
-                          )}
-                        </select>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="border-emerald-300 bg-emerald-50 text-emerald-800 text-xs font-semibold px-2.5 py-1">
+                          Áp dụng toàn bộ ({devices.length} thiết bị)
+                        </Badge>
                       </div>
                     </div>
                   </CardHeader>
 
                   <CardContent className="p-6 flex flex-col gap-6">
-                    {/* Trạng thái liên kết thiết bị */}
-                    {(() => {
-                      const matchedDev = devices.find((d) => {
-                        const dAssetId = typeof d.assetId === 'object' && d.assetId !== null ? (d.assetId as any)._id : d.assetId
-                        return String(dAssetId) === String(selectedSettingsAssetId)
-                      })
-
-                      if (!matchedDev) {
-                        return (
-                          <div className="rounded-lg border border-amber-200 bg-amber-50/80 p-4 text-xs text-amber-800 flex items-start gap-3">
-                            <span className="text-base font-bold text-amber-600">⚠️</span>
-                            <div>
-                              <p className="font-semibold">Cây chưa được liên kết thiết bị</p>
-                              <p className="mt-0.5 text-amber-700">
-                                Cây trồng được chọn hiện chưa có thiết bị (Device) nào được gán. Hãy vào mục "Danh sách thiết bị" và chọn cây tương ứng trước khi cấu hình ngưỡng an toàn.
-                              </p>
-                            </div>
+                    {/* Thanh bar 1: Ngưỡng độ ẩm đất (Soil Humidity) */}
+                    <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 flex flex-col gap-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Sprout className="size-4 text-emerald-600" />
+                          <div>
+                            <h4 className="text-sm font-semibold text-slate-900">
+                              Độ ẩm đất (Soil Moisture Threshold)
+                            </h4>
+                            <p className="text-[11px] text-slate-500">
+                              Kéo 2 hình tròn để xác định safe_min_soil_humidity và safe_max_soil_humidity
+                            </p>
                           </div>
-                        )
-                      }
+                        </div>
+                        <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-md">
+                          {settingSoilMin}% – {settingSoilMax}%
+                        </span>
+                      </div>
 
-                      return (
-                        <>
-                          <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-lg border border-emerald-100 bg-emerald-50/40 text-xs">
-                            <div className="flex items-center gap-2">
-                              <Cpu className="size-4 text-emerald-600" />
-                              <span className="font-semibold text-slate-800">Thiết bị đang gán:</span>
-                              <span className="font-bold text-emerald-900">{matchedDev.name || matchedDev._id}</span>
-                              <Badge variant="outline" className="text-[10px] bg-white border-emerald-200 text-emerald-800">
-                                Mã: {matchedDev._id}
-                              </Badge>
-                            </div>
-                            <span className="text-slate-500">
-                              Loại: {matchedDev.type || 'esp32'}
-                            </span>
+                      <DualRangeSlider
+                        min={0}
+                        max={100}
+                        step={1}
+                        minValue={settingSoilMin}
+                        maxValue={settingSoilMax}
+                        onChange={(minVal, maxVal) => {
+                          setSettingSoilMin(minVal)
+                          setSettingSoilMax(maxVal)
+                        }}
+                        unit="%"
+                        trackColor="bg-emerald-500"
+                      />
+                    </div>
+
+                    {/* Thanh bar 2: Ngưỡng mức nước bể chứa (Water Level) */}
+                    <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 flex flex-col gap-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Waves className="size-4 text-cyan-600" />
+                          <div>
+                            <h4 className="text-sm font-semibold text-slate-900">
+                              Mức nước bể chứa (Water Level Threshold)
+                            </h4>
+                            <p className="text-[11px] text-slate-500">
+                              Kéo 2 hình tròn để xác định safe_min_water_level và safe_max_water_level
+                            </p>
                           </div>
+                        </div>
+                        <span className="text-xs font-bold text-cyan-700 bg-cyan-50 border border-cyan-200 px-2.5 py-1 rounded-md">
+                          {settingWaterMin}% – {settingWaterMax}%
+                        </span>
+                      </div>
 
-                          {/* Thanh bar 1: Ngưỡng độ ẩm đất (Soil Humidity) */}
-                          <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 flex flex-col gap-3">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <Sprout className="size-4 text-emerald-600" />
-                                <div>
-                                  <h4 className="text-sm font-semibold text-slate-900">
-                                    Độ ẩm đất (Soil Moisture Threshold)
-                                  </h4>
-                                  <p className="text-[11px] text-slate-500">
-                                    Kéo 2 hình tròn để xác định safe_min_soil_humidity và safe_max_soil_humidity
-                                  </p>
-                                </div>
-                              </div>
-                              <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-md">
-                                {settingSoilMin}% – {settingSoilMax}%
-                              </span>
-                            </div>
+                      <DualRangeSlider
+                        min={0}
+                        max={100}
+                        step={1}
+                        minValue={settingWaterMin}
+                        maxValue={settingWaterMax}
+                        onChange={(minVal, maxVal) => {
+                          setSettingWaterMin(minVal)
+                          setSettingWaterMax(maxVal)
+                        }}
+                        unit="%"
+                        trackColor="bg-cyan-500"
+                      />
+                    </div>
 
-                            <DualRangeSlider
-                              min={0}
-                              max={100}
-                              step={1}
-                              minValue={settingSoilMin}
-                              maxValue={settingSoilMax}
-                              onChange={(minVal, maxVal) => {
-                                setSettingSoilMin(minVal)
-                                setSettingSoilMax(maxVal)
-                              }}
-                              unit="%"
-                              trackColor="bg-emerald-500"
-                            />
-                          </div>
+                    {/* Thông báo kết quả lưu */}
+                    {settingsSaveMsg && (
+                      <div
+                        className={`p-3 rounded-lg text-xs font-medium border flex items-center gap-2 ${settingsSaveMsg.type === 'success'
+                          ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                          : 'bg-red-50 border-red-200 text-red-800'
+                          }`}
+                      >
+                        <span>{settingsSaveMsg.type === 'success' ? '✓' : '⚠️'}</span>
+                        {settingsSaveMsg.text}
+                      </div>
+                    )}
 
-                          {/* Thanh bar 2: Ngưỡng mức nước bể chứa (Water Level) */}
-                          <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 flex flex-col gap-3">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <Waves className="size-4 text-cyan-600" />
-                                <div>
-                                  <h4 className="text-sm font-semibold text-slate-900">
-                                    Mức nước bể chứa (Water Level Threshold)
-                                  </h4>
-                                  <p className="text-[11px] text-slate-500">
-                                    Kéo 2 hình tròn để xác định safe_min_water_level và safe_max_water_level
-                                  </p>
-                                </div>
-                              </div>
-                              <span className="text-xs font-bold text-cyan-700 bg-cyan-50 border border-cyan-200 px-2.5 py-1 rounded-md">
-                                {settingWaterMin}% – {settingWaterMax}%
-                              </span>
-                            </div>
-
-                            <DualRangeSlider
-                              min={0}
-                              max={100}
-                              step={1}
-                              minValue={settingWaterMin}
-                              maxValue={settingWaterMax}
-                              onChange={(minVal, maxVal) => {
-                                setSettingWaterMin(minVal)
-                                setSettingWaterMax(maxVal)
-                              }}
-                              unit="%"
-                              trackColor="bg-cyan-500"
-                            />
-                          </div>
-
-                          {/* Thông báo kết quả lưu */}
-                          {settingsSaveMsg && (
-                            <div
-                              className={`p-3 rounded-lg text-xs font-medium border flex items-center gap-2 ${
-                                settingsSaveMsg.type === 'success'
-                                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                                  : 'bg-red-50 border-red-200 text-red-800'
-                              }`}
-                            >
-                              <span>{settingsSaveMsg.type === 'success' ? '✓' : '⚠️'}</span>
-                              {settingsSaveMsg.text}
-                            </div>
-                          )}
-
-                          {/* Nút Lưu dữ liệu Attribute */}
-                          <div className="flex items-center justify-end gap-3 pt-2">
-                            <Button
-                              onClick={handleSaveAttributes}
-                              disabled={savingSettings}
-                              className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs px-6 h-9 shadow-xs"
-                            >
-                              {savingSettings ? (
-                                <>
-                                  <RefreshCw className="size-3.5 mr-2 animate-spin" />
-                                  Đang lưu DB...
-                                </>
-                              ) : (
-                                'Lưu cấu hình Attribute'
-                              )}
-                            </Button>
-                          </div>
-                        </>
-                      )
-                    })()}
+                    {/* Nút Lưu dữ liệu Attribute */}
+                    <div className="flex items-center justify-end gap-3 pt-2">
+                      <Button
+                        onClick={handleSaveAttributes}
+                        disabled={savingSettings}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs px-6 h-9 shadow-xs"
+                      >
+                        {savingSettings ? (
+                          <>
+                            <RefreshCw className="size-3.5 mr-2 animate-spin" />
+                            Đang lưu DB...
+                          </>
+                        ) : (
+                          'Lưu cấu hình cho toàn bộ hệ thống'
+                        )}
+                      </Button>
+                    </div>
                   </CardContent>
                 </Card>
 
                 {/* Các cấu hình phụ khác (Làm mới & Đăng xuất) */}
-                <Card className="border-slate-200 bg-white/80 shadow-xs">
+                {/* <Card className="border-slate-200 bg-white/80 shadow-xs">
                   <CardContent className="flex flex-col gap-4 p-5">
                     <div className="flex items-center justify-between">
                       <div>
@@ -2686,7 +3221,7 @@ export default function Page() {
                       </div>
                     )}
                   </CardContent>
-                </Card>
+                </Card> */}
               </div>
             </>
           )}

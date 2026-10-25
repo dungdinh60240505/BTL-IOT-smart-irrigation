@@ -2,7 +2,6 @@
 
 import {
   Component,
-  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -10,145 +9,251 @@ import {
   type ReactNode,
 } from 'react'
 import {
-  ArrowLeft,
-  ChevronRight,
-  Cpu,
-  Droplets,
-  Info,
+  Check,
   LoaderCircle,
-  Pause,
-  Play,
-  RefreshCw,
+  Move,
   RotateCcw,
   Sprout,
-  Thermometer,
-  Waves,
-  Wind,
-  WifiOff,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { apiRequest } from '@/lib/api'
 import {
-  ASSET_TYPE_LABELS,
   resolveAssetVariant,
   type AssetModelVariant,
 } from '@/lib/asset-type'
 import { cn } from '@/lib/utils'
 import { Greenhouse3DFallback } from './greenhouse-3d-fallback'
+import { GreenhousePanel } from './greenhouse-3d-panel'
 import { GreenhouseScene } from './greenhouse-scene'
 import {
-  POLL_INTERVAL_MS,
-  formatDateTime,
-  formatElapsed,
-  formatMetric,
-  formatTimestamp,
   getDeviceAssetId,
   getSoilHealth,
   getThresholds,
   isWaterLow,
-  normalizeTelemetry,
-  type DeviceDetail,
   type GreenhouseAsset,
   type GreenhouseDevice,
+  type GreenhouseStation,
   type GreenhouseTelemetry,
-  type SoilHealth,
-  type Thresholds,
+  type StationLayout,
 } from './greenhouse-3d-types'
+import { reconcileLayout } from './greenhouse-layout'
 
 export interface Greenhouse3DProps {
-  asset: GreenhouseAsset | null
+  assets: GreenhouseAsset[]
   devices: GreenhouseDevice[]
-  pumpOn: boolean
-  waitingForTelemetry: boolean
-  elapsedSeconds: number
+  telemetryByDevice: Record<string, GreenhouseTelemetry>
+  pumpStatesByDevice: Record<string, boolean>
+  onLayoutSaved?: (assetId: string, layout: StationLayout) => void
 }
 
-type PanelFocus = 'asset' | 'device'
-
 export default function Greenhouse3D({
-  asset,
+  assets,
   devices,
-  pumpOn,
-  waitingForTelemetry,
-  elapsedSeconds,
+  telemetryByDevice,
+  pumpStatesByDevice,
+  onLayoutSaved,
 }: Greenhouse3DProps) {
+  const [layout, setLayout] = useState<Record<string, StationLayout>>(
+    () => reconcileLayout(assets, {}),
+  )
+  const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null)
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null)
-  const [focus, setFocus] = useState<PanelFocus>('asset')
-  const [autoRotate, setAutoRotate] = useState(false)
+  const [editMode, setEditMode] = useState(false)
   const [resetSignal, setResetSignal] = useState(0)
+  const [sceneVisible, setSceneVisible] = useState(true)
+  const [pageVisible, setPageVisible] = useState(true)
+  const [savingAssetId, setSavingAssetId] = useState<string | null>(null)
+  const [layoutMessage, setLayoutMessage] = useState<{
+    type: 'success' | 'error'
+    text: string
+  } | null>(null)
   const reducedMotion = useReducedMotion()
   const webglSupported = useWebGLSupport()
-
-  const variant = asset ? resolveAssetVariant(asset.type) : 'potted'
-  const assetDevices = useMemo(() => {
-    if (!asset) return []
-
-    return devices
-      .filter((device) => getDeviceAssetId(device) === asset._id)
-      .sort((left, right) =>
-        (left.name || left._id).localeCompare(right.name || right._id, 'vi'),
-      )
-  }, [asset, devices])
-
-  const selectedDevice = useMemo(
-    () => assetDevices.find((device) => device._id === selectedDeviceId) ?? null,
-    [assetDevices, selectedDeviceId],
-  )
-  const thresholds = useMemo(
-    () => getThresholds(selectedDevice ?? assetDevices[0]),
-    [assetDevices, selectedDevice],
-  )
-  const { telemetry, loading, error, refresh } = useDeviceTelemetry(selectedDeviceId)
-
-  const previousAssetIdRef = useRef<string | null>(null)
-  const hadDevicesRef = useRef(false)
+  const isMobile = useIsMobile()
+  const canvasContainerRef = useRef<HTMLDivElement>(null)
+  const paused = !sceneVisible || !pageVisible
 
   useEffect(() => {
-    const firstDevice = assetDevices[0]
-    const assetChanged = previousAssetIdRef.current !== (asset?._id ?? null)
+    setLayout((previous) => reconcileLayout(assets, previous))
+  }, [assets])
 
-    if (assetChanged) {
-      previousAssetIdRef.current = asset?._id ?? null
-      setSelectedDeviceId(firstDevice?._id ?? null)
-      setFocus(firstDevice ? 'device' : 'asset')
-      return
-    }
-
-    setSelectedDeviceId((current) => {
-      if (current && assetDevices.some((device) => device._id === current)) {
+  useEffect(() => {
+    setSelectedAssetId((current) => {
+      if (current && assets.some((asset) => asset._id === current)) {
         return current
       }
-      return firstDevice?._id ?? null
+      return assets[0]?._id ?? null
     })
-
-    if (assetDevices.length === 0) setFocus('asset')
-  }, [asset?._id, assetDevices])
+  }, [assets])
 
   useEffect(() => {
-    if (assetDevices.length > 0 && !hadDevicesRef.current) {
-      hadDevicesRef.current = true
-      setFocus('device')
+    if (!selectedDeviceId) return
+
+    const device = devices.find((item) => item._id === selectedDeviceId)
+    if (!device || getDeviceAssetId(device) !== selectedAssetId) {
+      setSelectedDeviceId(null)
     }
-    if (assetDevices.length === 0) hadDevicesRef.current = false
-  }, [assetDevices.length])
+  }, [devices, selectedAssetId, selectedDeviceId])
 
-  const handleSelectDevice = useCallback((deviceId: string) => {
+  useEffect(() => {
+    if (isMobile) setEditMode(false)
+  }, [isMobile])
+
+  useEffect(() => {
+    if (!layoutMessage) return
+
+    const timeout = window.setTimeout(() => setLayoutMessage(null), 4500)
+    return () => window.clearTimeout(timeout)
+  }, [layoutMessage])
+
+  useEffect(() => {
+    const update = () =>
+      setPageVisible(document.visibilityState === 'visible')
+
+    update()
+    document.addEventListener('visibilitychange', update)
+    return () => document.removeEventListener('visibilitychange', update)
+  }, [])
+
+  useEffect(() => {
+    const node = canvasContainerRef.current
+    if (!node || typeof IntersectionObserver === 'undefined') return
+
+    const observer = new IntersectionObserver(
+      ([entry]) => setSceneVisible(entry.isIntersecting),
+      { threshold: 0.01 },
+    )
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [])
+
+  const stations = useMemo<GreenhouseStation[]>(() => {
+    return assets.map((asset) => {
+      const assetDevices = devices
+        .filter((device) => getDeviceAssetId(device) === asset._id)
+        .sort((left, right) =>
+          (left.name || left._id).localeCompare(
+            right.name || right._id,
+            'vi',
+          ),
+        )
+      const primaryDevice =
+        assetDevices.find((device) => telemetryByDevice[device._id]) ??
+        assetDevices[0] ??
+        null
+      const primaryTelemetry = primaryDevice
+        ? telemetryByDevice[primaryDevice._id] ?? null
+        : null
+      const thresholds = getThresholds(primaryDevice)
+      const soilHealth = getSoilHealth(
+        primaryTelemetry?.soil_humidity ?? null,
+        thresholds,
+      )
+      const waterLow = isWaterLow(
+        primaryTelemetry?.water_level ?? null,
+        thresholds,
+      )
+
+      return {
+        asset,
+        devices: assetDevices,
+        telemetryByDevice,
+        primaryDevice,
+        primaryTelemetry,
+        thresholds,
+        soilHealth,
+        waterLow,
+        pumpOn: assetDevices.some((device) =>
+          Boolean(pumpStatesByDevice[device._id]),
+        ),
+        online: assetDevices.some((device) => device.online),
+        position: layout[asset._id] ?? { x: 0, z: 0 },
+      }
+    })
+  }, [assets, devices, layout, pumpStatesByDevice, telemetryByDevice])
+
+  const selectedStation =
+    stations.find((station) => station.asset._id === selectedAssetId) ??
+    null
+  const selectedDevice =
+    stations
+      .flatMap((station) => station.devices)
+      .find((device) => device._id === selectedDeviceId) ?? null
+  const onlineAssets = stations.filter((station) => station.online).length
+  const totalNodeCount = stations.reduce(
+    (total, station) => total + station.devices.length,
+    0,
+  )
+  const fallbackVariant: AssetModelVariant = stations[0]
+    ? resolveAssetVariant(stations[0].asset.type)
+    : 'potted'
+
+  const handleSelectAsset = (assetId: string | null) => {
+    setSelectedAssetId(assetId)
+    setSelectedDeviceId(null)
+  }
+
+  const handleSelectDevice = (deviceId: string) => {
+    const device = devices.find((item) => item._id === deviceId)
+    if (!device) return
+
     setSelectedDeviceId(deviceId)
-    setFocus('device')
-  }, [])
+    const assetId = getDeviceAssetId(device)
+    if (assetId) setSelectedAssetId(assetId)
+  }
 
-  const handleSelectAsset = useCallback(() => {
-    setFocus('asset')
-  }, [])
+  const handleToggleEdit = () => {
+    if (isMobile) return
 
-  const soilHealth = getSoilHealth(telemetry?.soil_humidity ?? null, thresholds)
-  const waterLow = isWaterLow(telemetry?.water_level ?? null, thresholds)
-  const onlineCount = assetDevices.filter((device) => device.online).length
-  const sceneOnline = onlineCount > 0
+    const next = !editMode
+    setEditMode(next)
+    if (next && !selectedAssetId && assets[0]) {
+      setSelectedAssetId(assets[0]._id)
+    }
+    if (!next) setLayoutMessage(null)
+  }
 
-  if (!asset) {
+  const handleMoveStation = async (
+    assetId: string,
+    position: StationLayout,
+  ) => {
+    const previous = layout[assetId]
+    setLayout((current) => ({ ...current, [assetId]: position }))
+    setSavingAssetId(assetId)
+    setLayoutMessage(null)
+
+    try {
+      const updated = await apiRequest<GreenhouseAsset>(
+        `/api/assets/${encodeURIComponent(assetId)}/layout`,
+        {
+          method: 'PUT',
+          body: JSON.stringify(position),
+        },
+      )
+      onLayoutSaved?.(assetId, updated.layout ?? position)
+      setLayoutMessage({
+        type: 'success',
+        text: `Đã lưu vị trí ${updated.name || 'cây'}.`,
+      })
+    } catch (error) {
+      setLayout((current) => {
+        const next = { ...current }
+        if (previous) next[assetId] = previous
+        else delete next[assetId]
+        return next
+      })
+      setLayoutMessage({
+        type: 'error',
+        text: layoutErrorMessage(error),
+      })
+    } finally {
+      setSavingAssetId(null)
+    }
+  }
+
+  if (assets.length === 0) {
     return (
       <Card className="mb-8 overflow-hidden border-emerald-100/90 bg-white/95 shadow-xs">
         <CardContent className="flex min-h-[220px] flex-col items-center justify-center gap-2 p-6 text-center">
@@ -157,8 +262,8 @@ export default function Greenhouse3D({
             Chưa có cây để hiển thị 3D
           </p>
           <p className="max-w-sm text-xs leading-relaxed text-slate-500">
-            Thêm cây hoặc khu vườn trong mục “Quản lý khu vườn” để xem mô hình
-            và telemetry của cảm biến.
+            Thêm cây hoặc khu vườn trong mục “Quản lý khu vườn” để xem mô
+            hình và telemetry của tất cả cảm biến.
           </p>
         </CardContent>
       </Card>
@@ -175,58 +280,52 @@ export default function Greenhouse3D({
             </p>
             <div className="flex flex-wrap items-center gap-2">
               <CardTitle className="text-base text-slate-900">
-                Cây đang theo dõi
+                Tất cả cây trong vườn
               </CardTitle>
               <Badge
                 variant="outline"
-                className="max-w-[220px] truncate border-emerald-300 bg-emerald-50 font-normal text-emerald-800"
+                className="border-emerald-300 bg-emerald-50 font-normal text-emerald-800"
               >
-                {asset.name}
+                {assets.length} cây
               </Badge>
               <Badge
                 variant="outline"
-                className="border-slate-300 bg-slate-50 font-normal text-slate-600"
+                className={cn(
+                  'font-normal',
+                  onlineAssets > 0
+                    ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
+                    : 'border-red-200 bg-red-50 text-red-700',
+                )}
               >
-                {ASSET_TYPE_LABELS[variant]}
+                {onlineAssets}/{assets.length} online
               </Badge>
+              {savingAssetId && (
+                <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] text-slate-500">
+                  <LoaderCircle className="size-3 animate-spin" />
+                  Đang lưu vị trí...
+                </span>
+              )}
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <Badge
-              variant="outline"
-              className={cn(
-                'font-normal',
-                onlineCount > 0
-                  ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
-                  : 'border-red-200 bg-red-50 text-red-700',
-              )}
-            >
-              <span
-                className={cn(
-                  'inline-block size-1.5 rounded-full',
-                  onlineCount > 0 ? 'bg-emerald-500' : 'bg-red-500',
-                )}
-              />
-              {assetDevices.length === 0
-                ? 'Chưa gán cảm biến'
-                : `${onlineCount}/${assetDevices.length} online`}
-            </Badge>
-
             <Button
               type="button"
-              variant="outline"
+              variant={editMode ? 'secondary' : 'outline'}
               size="sm"
-              className="h-8 gap-1.5 border-slate-300 text-xs text-slate-700"
-              onClick={() => setAutoRotate((current) => !current)}
-              aria-pressed={autoRotate}
-            >
-              {autoRotate ? (
-                <Pause className="size-3.5" />
-              ) : (
-                <Play className="size-3.5" />
+              className={cn(
+                'hidden h-8 gap-1.5 border-slate-300 text-xs lg:inline-flex',
+                editMode && 'border-cyan-300 bg-cyan-50 text-cyan-900',
               )}
-              Tự xoay
+              onClick={handleToggleEdit}
+              aria-pressed={editMode}
+            >
+              {editMode ? (
+                <Check className="size-3.5" />
+              ) : (
+                <Move className="size-3.5" />
+              )}
+              {editMode ? 'Xong' : 'Sắp xếp'}
             </Button>
 
             <Button
@@ -235,104 +334,116 @@ export default function Greenhouse3D({
               size="sm"
               className="h-8 w-8 border-slate-300 p-0 text-slate-700"
               onClick={() => setResetSignal((current) => current + 1)}
-              aria-label="Đưa camera về góc mặc định"
-              title="Đưa camera về góc mặc định"
+              aria-label="Fit camera toàn bộ khu vườn"
+              title="Fit camera toàn bộ khu vườn"
             >
               <RotateCcw className="size-3.5" />
             </Button>
           </div>
         </div>
+
+        {layoutMessage && (
+          <div
+            className={cn(
+              'mt-3 rounded-lg border px-2.5 py-2 text-[10px]',
+              layoutMessage.type === 'success'
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                : 'border-red-200 bg-red-50 text-red-700',
+            )}
+          >
+            {layoutMessage.text}
+          </div>
+        )}
       </CardHeader>
 
       <CardContent className="p-3 sm:p-5">
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(300px,1fr)]">
-          <div className="relative h-[320px] overflow-hidden rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50/90 via-white to-cyan-50/70 sm:h-[380px] xl:h-[460px]">
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
+          <div
+            ref={canvasContainerRef}
+            className="relative h-[340px] overflow-hidden rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50/90 via-white to-cyan-50/70 sm:h-[420px] xl:h-[460px]"
+          >
             {webglSupported === null ? (
               <SceneLoading />
             ) : webglSupported ? (
               <SceneErrorBoundary
                 fallback={
                   <Greenhouse3DFallback
-                    variant={variant}
-                    nodeCount={assetDevices.length}
+                    variant={fallbackVariant}
+                    nodeCount={totalNodeCount}
+                    treeCount={assets.length}
                     message="Không tải được mô hình 3D. Dữ liệu telemetry vẫn hiển thị đầy đủ ở panel bên cạnh."
                   />
                 }
               >
                 <GreenhouseScene
-                  variant={variant}
-                  devices={assetDevices}
-                  selectedDeviceId={
-                    focus === 'device' ? selectedDeviceId : null
-                  }
-                  telemetry={telemetry}
-                  soilHealth={soilHealth}
-                  waterLow={waterLow}
-                  pumpOn={pumpOn}
-                  waitingForTelemetry={waitingForTelemetry}
-                  autoRotate={autoRotate}
+                  stations={stations}
+                  layout={layout}
+                  selectedAssetId={selectedAssetId}
+                  selectedDeviceId={selectedDeviceId}
+                  editMode={editMode}
+                  isMobile={isMobile}
+                  paused={paused}
                   resetSignal={resetSignal}
                   reducedMotion={reducedMotion}
-                  onSelectDevice={handleSelectDevice}
                   onSelectAsset={handleSelectAsset}
+                  onSelectDevice={handleSelectDevice}
+                  onMoveStation={handleMoveStation}
+                  onLayoutError={(message) =>
+                    setLayoutMessage({ type: 'error', text: message })
+                  }
                 />
               </SceneErrorBoundary>
             ) : (
               <Greenhouse3DFallback
-                variant={variant}
-                nodeCount={assetDevices.length}
+                variant={fallbackVariant}
+                nodeCount={totalNodeCount}
+                treeCount={assets.length}
               />
             )}
 
-            <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-1.5 rounded-full border border-white/70 bg-white/85 px-2.5 py-1 text-[10px] font-semibold text-slate-700 shadow-sm backdrop-blur">
+            <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-1.5 rounded-full border border-white/70 bg-white/85 px-2.5 py-1 text-[10px] font-semibold text-slate-700 shadow-sm">
               <span
                 className={cn(
                   'inline-block size-1.5 rounded-full',
-                  sceneOnline ? 'bg-emerald-500' : 'bg-red-500',
-                  sceneOnline &&
+                  onlineAssets > 0 ? 'bg-emerald-500' : 'bg-red-500',
+                  onlineAssets > 0 &&
                     !reducedMotion &&
                     'motion-safe:animate-pulse',
                 )}
               />
-              {assetDevices.length === 0
-                ? 'NO SENSOR'
-                : sceneOnline
-                  ? 'LIVE'
-                  : 'OFFLINE'}
+              {onlineAssets > 0 ? 'LIVE' : 'OFFLINE'} · {assets.length} cây
             </div>
 
-            <div className="pointer-events-none absolute left-1/2 top-3 max-w-[46%] -translate-x-1/2 truncate rounded-full border border-white/70 bg-white/85 px-2.5 py-1 text-[10px] font-semibold text-slate-700 shadow-sm backdrop-blur">
-              {asset.name}
+            <div className="pointer-events-none absolute left-1/2 top-3 max-w-[46%] -translate-x-1/2 truncate rounded-full border border-white/70 bg-white/85 px-2.5 py-1 text-[10px] font-semibold text-slate-700 shadow-sm">
+              {editMode
+                ? `Đang sắp xếp: ${
+                    selectedStation?.asset.name ?? 'chọn một cây'
+                  } · click điểm đích`
+                : selectedStation?.asset.name ?? 'Khu vườn 3D'}
             </div>
 
             <div className="pointer-events-none absolute inset-x-3 bottom-3 flex items-center justify-between gap-2 text-[10px] text-slate-500">
-              <span className="rounded-full bg-white/85 px-2.5 py-1 shadow-sm backdrop-blur">
-                Kéo để xoay · Cuộn để zoom
+              <span className="rounded-full bg-white/85 px-2.5 py-1 shadow-sm">
+                {editMode
+                  ? 'Chọn cây, sau đó click điểm đích trên mặt đất'
+                  : 'Kéo để xoay · Cuộn để zoom'}
               </span>
-              <span className="hidden rounded-full bg-white/85 px-2.5 py-1 shadow-sm backdrop-blur sm:inline">
-                Click node để xem telemetry
+              <span className="hidden rounded-full bg-white/85 px-2.5 py-1 shadow-sm sm:inline">
+                {editMode
+                  ? 'Snap 0.5 m · Chống chồng lấn · 30 FPS'
+                  : 'Click node để xem telemetry'}
               </span>
             </div>
           </div>
 
-          <InfoPanel
-            asset={asset}
-            variant={variant}
-            devices={assetDevices}
-            selectedDevice={selectedDevice}
-            focus={focus}
-            telemetry={telemetry}
-            loading={loading}
-            error={error}
-            thresholds={thresholds}
-            soilHealth={soilHealth}
-            waterLow={waterLow}
-            pumpOn={pumpOn}
-            waitingForTelemetry={waitingForTelemetry}
-            elapsedSeconds={elapsedSeconds}
-            onBack={handleSelectAsset}
+          <GreenhousePanel
+            stations={stations}
+            selectedAssetId={selectedAssetId}
+            selectedDeviceId={selectedDeviceId}
+            pumpStatesByDevice={pumpStatesByDevice}
+            editMode={editMode}
+            onSelectAsset={handleSelectAsset}
             onSelectDevice={handleSelectDevice}
-            onRefresh={refresh}
           />
         </div>
 
@@ -353,509 +464,6 @@ export default function Greenhouse3D({
   )
 }
 
-interface InfoPanelProps {
-  asset: GreenhouseAsset
-  variant: AssetModelVariant
-  devices: GreenhouseDevice[]
-  selectedDevice: GreenhouseDevice | null
-  focus: PanelFocus
-  telemetry: GreenhouseTelemetry | null
-  loading: boolean
-  error: string | null
-  thresholds: Thresholds
-  soilHealth: SoilHealth
-  waterLow: boolean
-  pumpOn: boolean
-  waitingForTelemetry: boolean
-  elapsedSeconds: number
-  onBack: () => void
-  onSelectDevice: (deviceId: string) => void
-  onRefresh: () => void
-}
-
-function InfoPanel({
-  asset,
-  variant,
-  devices,
-  selectedDevice,
-  focus,
-  telemetry,
-  loading,
-  error,
-  thresholds,
-  soilHealth,
-  waterLow,
-  pumpOn,
-  waitingForTelemetry,
-  elapsedSeconds,
-  onBack,
-  onSelectDevice,
-  onRefresh,
-}: InfoPanelProps) {
-  const showingDevice = focus === 'device' && Boolean(selectedDevice)
-  const onlineCount = devices.filter((device) => device.online).length
-
-  return (
-    <div className="flex min-h-[320px] flex-col rounded-2xl border border-slate-200 bg-white p-4 xl:h-[460px]">
-      <div className="flex items-start justify-between gap-2 border-b border-slate-100 pb-3">
-        <div className="min-w-0">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-            {showingDevice ? 'Node cảm biến' : 'Thông tin cây'}
-          </p>
-          <h3 className="mt-1 truncate text-sm font-semibold text-slate-900">
-            {showingDevice && selectedDevice
-              ? selectedDevice.name || selectedDevice._id
-              : asset.name}
-          </h3>
-          <p className="mt-0.5 truncate text-[10px] text-slate-500">
-            {showingDevice && selectedDevice
-              ? `${selectedDevice.type || 'sensor'} · ${
-                  selectedDevice.online ? 'Online' : 'Offline'
-                }`
-              : `${ASSET_TYPE_LABELS[variant]} · ${devices.length} node cảm biến`}
-          </p>
-        </div>
-
-        <div className="flex shrink-0 items-center gap-1">
-          {showingDevice && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="size-7 text-slate-500"
-              onClick={onBack}
-              aria-label="Quay lại thông tin cây"
-              title="Quay lại thông tin cây"
-            >
-              <ArrowLeft className="size-3.5" />
-            </Button>
-          )}
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="size-7 text-slate-500"
-            onClick={onRefresh}
-            disabled={!selectedDevice || loading}
-            aria-label="Làm mới telemetry"
-            title="Làm mới telemetry"
-          >
-            <RefreshCw
-              className={cn('size-3.5', loading && 'animate-spin')}
-            />
-          </Button>
-        </div>
-      </div>
-
-      <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
-        {showingDevice && selectedDevice ? (
-          <DeviceDetails
-            device={selectedDevice}
-            telemetry={telemetry}
-            loading={loading}
-            error={error}
-            thresholds={thresholds}
-            soilHealth={soilHealth}
-            waterLow={waterLow}
-            pumpOn={pumpOn}
-            waitingForTelemetry={waitingForTelemetry}
-            elapsedSeconds={elapsedSeconds}
-          />
-        ) : (
-          <AssetDetails
-            asset={asset}
-            variant={variant}
-            devices={devices}
-          />
-        )}
-      </div>
-
-      <DeviceList
-        devices={devices}
-        onlineCount={onlineCount}
-        selectedDeviceId={showingDevice ? selectedDevice?._id ?? null : null}
-        onSelect={onSelectDevice}
-      />
-    </div>
-  )
-}
-
-function AssetDetails({
-  asset,
-  variant,
-  devices,
-}: {
-  asset: GreenhouseAsset
-  variant: AssetModelVariant
-  devices: GreenhouseDevice[]
-}) {
-  return (
-    <div className="flex flex-col gap-2.5">
-      <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
-        <InfoRow label="Loại cây" value={ASSET_TYPE_LABELS[variant]} />
-        <InfoRow
-          label="Ngày tạo"
-          value={asset.createdAt ? formatDateTime(asset.createdAt) : '--'}
-        />
-        <InfoRow label="Node cảm biến" value={`${devices.length} thiết bị`} />
-      </div>
-
-      <div className="rounded-xl border border-dashed border-emerald-200 bg-emerald-50/50 p-3 text-[11px] leading-relaxed text-slate-600">
-        <div className="mb-1 flex items-center gap-1.5 font-semibold text-emerald-900">
-          <Info className="size-3.5" />
-          Cách xem telemetry
-        </div>
-        Click vào một node cảm biến trên mô hình 3D, hoặc chọn thiết bị ở danh
-        sách bên dưới. Dữ liệu sẽ được tải từ DB và tự cập nhật mỗi{' '}
-        {POLL_INTERVAL_MS / 1000} giây.
-      </div>
-
-      {devices.length === 0 && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] leading-relaxed text-amber-900">
-          <div className="mb-1 flex items-center gap-1.5 font-semibold">
-            <Cpu className="size-3.5" />
-            Chưa gán cảm biến
-          </div>
-          Vào “Quản lý thiết bị” để gán một device cho cây này. Node cảm biến sẽ
-          xuất hiện trên mô hình 3D sau khi gán.
-        </div>
-      )}
-    </div>
-  )
-}
-
-function DeviceDetails({
-  device,
-  telemetry,
-  loading,
-  error,
-  thresholds,
-  soilHealth,
-  waterLow,
-  pumpOn,
-  waitingForTelemetry,
-  elapsedSeconds,
-}: {
-  device: GreenhouseDevice
-  telemetry: GreenhouseTelemetry | null
-  loading: boolean
-  error: string | null
-  thresholds: Thresholds
-  soilHealth: SoilHealth
-  waterLow: boolean
-  pumpOn: boolean
-  waitingForTelemetry: boolean
-  elapsedSeconds: number
-}) {
-  const hasTelemetry = Boolean(telemetry)
-  const soilValue = telemetry?.soil_humidity ?? null
-  const waterValue = telemetry?.water_level ?? null
-
-  return (
-    <div className="flex flex-col gap-3">
-      <div
-        className={cn(
-          'rounded-xl border px-3 py-2',
-          device.online
-            ? pumpOn
-              ? 'border-emerald-200 bg-emerald-50/80'
-              : 'border-slate-200 bg-slate-50'
-            : 'border-red-200 bg-red-50',
-        )}
-      >
-        <div
-          className={cn(
-            'flex items-center gap-2 text-xs font-semibold',
-            device.online
-              ? pumpOn
-                ? 'text-emerald-900'
-                : 'text-slate-700'
-              : 'text-red-800',
-          )}
-        >
-          {device.online ? (
-            <Droplets className="size-3.5" />
-          ) : (
-            <WifiOff className="size-3.5" />
-          )}
-          {!device.online
-            ? 'Thiết bị đang offline'
-            : pumpOn
-              ? waitingForTelemetry
-                ? 'Đang chờ telemetry để chốt thời gian tưới'
-                : `Đang tưới · ${formatElapsed(elapsedSeconds)}`
-              : 'Van tưới đang đóng'}
-        </div>
-        <p className="mt-0.5 text-[10px] leading-relaxed text-slate-500">
-          {!device.online
-            ? 'Dữ liệu bên dưới là lần cập nhật cuối cùng trước khi mất kết nối.'
-            : pumpOn
-              ? 'Lệnh bơm đã được gửi. Van mở và nước đang chảy trong mô hình 3D.'
-              : 'Bật công tắc máy bơm ở phía trên để bắt đầu tưới.'}
-        </p>
-      </div>
-
-      {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-2.5 text-[11px] text-red-700">
-          {error}
-        </div>
-      )}
-
-      {hasTelemetry ? (
-        <>
-          <div className="grid grid-cols-2 gap-2">
-            <TelemetryTile
-              icon={Thermometer}
-              label="Nhiệt độ"
-              value={formatMetric(telemetry?.temperature ?? null, '°C', 1)}
-              muted={telemetry?.temperature == null}
-            />
-            <TelemetryTile
-              icon={Wind}
-              label="Độ ẩm không khí"
-              value={formatMetric(telemetry?.humidity ?? null, '%')}
-              muted={telemetry?.humidity == null}
-            />
-            <TelemetryTile
-              icon={Sprout}
-              label="Độ ẩm đất"
-              value={formatMetric(soilValue, '%')}
-              muted={soilValue == null}
-            />
-            <TelemetryTile
-              icon={Waves}
-              label="Mực nước"
-              value={formatMetric(waterValue, '%')}
-              muted={waterValue == null}
-            />
-          </div>
-
-          <div className="flex flex-col gap-2.5 rounded-xl border border-slate-200 p-3">
-            <RangeBar
-              label="Độ ẩm đất"
-              value={soilValue}
-              min={thresholds.soilMin}
-              max={thresholds.soilMax}
-            />
-            <RangeBar
-              label="Mực nước"
-              value={waterValue}
-              min={thresholds.waterMin}
-              max={thresholds.waterMax}
-            />
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-500">
-            <span>Cập nhật: {formatTimestamp(telemetry?.timestamp)}</span>
-            <span
-              className={cn(
-                'inline-flex items-center gap-1 font-medium',
-                soilHealth === 'dry'
-                  ? 'text-amber-700'
-                  : soilHealth === 'wet'
-                    ? 'text-cyan-700'
-                    : 'text-emerald-700',
-              )}
-            >
-              <span className="inline-block size-1.5 rounded-full bg-current" />
-              {soilStatusLabel(soilHealth)}
-            </span>
-          </div>
-
-          {waterLow && (
-            <p className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-[10px] font-medium text-amber-800">
-              Mực nước đang thấp hơn ngưỡng an toàn. Kiểm tra nguồn nước trước
-              khi tưới tiếp.
-            </p>
-          )}
-        </>
-      ) : (
-        <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-8 text-center">
-          {loading ? (
-            <LoaderCircle className="size-5 animate-spin text-emerald-600" />
-          ) : (
-            <Waves className="size-5 text-slate-400" />
-          )}
-          <p className="text-xs font-semibold text-slate-700">
-            {loading ? 'Đang tải telemetry...' : 'Chưa có telemetry'}
-          </p>
-          <p className="max-w-[240px] text-[10px] leading-relaxed text-slate-500">
-            {device.online
-              ? 'Thiết bị đang online nhưng chưa gửi bản ghi nào. Thử làm mới sau vài giây.'
-              : 'Thiết bị đang offline. Dữ liệu sẽ xuất hiện khi thiết bị gửi telemetry trở lại.'}
-          </p>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function DeviceList({
-  devices,
-  onlineCount,
-  selectedDeviceId,
-  onSelect,
-}: {
-  devices: GreenhouseDevice[]
-  onlineCount: number
-  selectedDeviceId: string | null
-  onSelect: (deviceId: string) => void
-}) {
-  if (devices.length === 0) return null
-
-  return (
-    <div className="mt-3 shrink-0 border-t border-slate-100 pt-3">
-      <div className="mb-1.5 flex items-center justify-between">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-          Node cảm biến
-        </p>
-        <span className="text-[10px] text-slate-400">
-          {onlineCount}/{devices.length} online
-        </span>
-      </div>
-      <div className="flex max-h-[126px] flex-col gap-1.5 overflow-y-auto pr-1">
-        {devices.map((device) => {
-          const selected = device._id === selectedDeviceId
-
-          return (
-            <button
-              key={device._id}
-              type="button"
-              onClick={() => onSelect(device._id)}
-              className={cn(
-                'flex w-full items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left transition-colors',
-                selected
-                  ? 'border-emerald-300 bg-emerald-50'
-                  : 'border-slate-200 bg-white hover:bg-slate-50',
-              )}
-            >
-              <span
-                className={cn(
-                  'inline-block size-1.5 shrink-0 rounded-full',
-                  device.online ? 'bg-emerald-500' : 'bg-red-500',
-                )}
-              />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[11px] font-semibold text-slate-800">
-                  {device.name || device._id}
-                </span>
-                <span className="block truncate text-[9px] text-slate-500">
-                  {device.type || 'sensor'} ·{' '}
-                  {device.online ? 'Online' : 'Offline'}
-                </span>
-              </span>
-              <ChevronRight
-                className={cn(
-                  'size-3 shrink-0',
-                  selected ? 'text-emerald-600' : 'text-slate-400',
-                )}
-              />
-            </button>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
-function TelemetryTile({
-  icon: Icon,
-  label,
-  value,
-  muted,
-}: {
-  icon: typeof Thermometer
-  label: string
-  value: string
-  muted: boolean
-}) {
-  return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
-      <div className="flex items-center gap-1.5 text-[10px] font-medium text-slate-500">
-        <Icon className="size-3.5 text-emerald-600" />
-        {label}
-      </div>
-      <p
-        className={cn(
-          'mt-1 text-lg font-semibold',
-          muted ? 'text-slate-400' : 'text-slate-900',
-        )}
-      >
-        {value}
-      </p>
-    </div>
-  )
-}
-
-function RangeBar({
-  label,
-  value,
-  min,
-  max,
-}: {
-  label: string
-  value: number | null
-  min: number
-  max: number
-}) {
-  const safeMin = clamp(Math.min(min, max), 0, 100)
-  const safeMax = clamp(Math.max(min, max), 0, 100)
-  const marker = value === null ? null : clamp(value, 0, 100)
-  const inRange =
-    value !== null && value >= safeMin && value <= safeMax
-
-  return (
-    <div>
-      <div className="mb-1 flex items-center justify-between text-[10px]">
-        <span className="font-medium text-slate-600">{label}</span>
-        <span
-          className={cn(
-            'font-semibold',
-            value === null
-              ? 'text-slate-400'
-              : inRange
-                ? 'text-emerald-700'
-                : 'text-amber-700',
-          )}
-        >
-          {value === null ? '--' : `${Math.round(value)}%`}
-        </span>
-      </div>
-      <div className="relative h-2 rounded-full bg-slate-100">
-        <div
-          className="absolute inset-y-0 rounded-full bg-emerald-100"
-          style={{ left: `${safeMin}%`, width: `${safeMax - safeMin}%` }}
-        />
-        {marker !== null && (
-          <span
-            className={cn(
-              'absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-sm',
-              inRange ? 'bg-cyan-600' : 'bg-amber-500',
-            )}
-            style={{ left: `${marker}%` }}
-          />
-        )}
-      </div>
-      <div className="mt-1 flex justify-between text-[9px] text-slate-400">
-        <span>0%</span>
-        <span>
-          An toàn {safeMin}–{safeMax}%
-        </span>
-        <span>100%</span>
-      </div>
-    </div>
-  )
-}
-
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between gap-3 border-b border-slate-200/70 py-1 text-[11px] last:border-0 last:pb-0">
-      <span className="text-slate-500">{label}</span>
-      <span className="truncate font-medium text-slate-800">{value}</span>
-    </div>
-  )
-}
-
 function SceneLoading() {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-2 text-slate-500">
@@ -863,119 +471,6 @@ function SceneLoading() {
       <p className="text-[11px] font-medium">Đang tải mô hình 3D...</p>
     </div>
   )
-}
-
-function soilStatusLabel(health: SoilHealth): string {
-  if (health === 'dry') return 'Đất đang thiếu nước'
-  if (health === 'wet') return 'Đất đang quá ẩm'
-  if (health === 'healthy') return 'Độ ẩm đất ổn định'
-  return 'Chưa có dữ liệu độ ẩm đất'
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max)
-}
-
-function useDeviceTelemetry(deviceId: string | null) {
-  const [telemetry, setTelemetry] = useState<GreenhouseTelemetry | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const requestRef = useRef<AbortController | null>(null)
-
-  const load = useCallback(
-    async (silent = false) => {
-      if (!deviceId) {
-        setTelemetry(null)
-        setError(null)
-        setLoading(false)
-        return
-      }
-
-      requestRef.current?.abort()
-      const controller = new AbortController()
-      requestRef.current = controller
-
-      if (!silent) setLoading(true)
-
-      try {
-        const detail = await apiRequest<DeviceDetail>(
-          `/api/devices/${encodeURIComponent(deviceId)}`,
-          { signal: controller.signal },
-        )
-
-        if (
-          controller.signal.aborted ||
-          requestRef.current !== controller
-        ) {
-          return
-        }
-
-        setTelemetry(normalizeTelemetry(detail.latestTelemetry))
-        setError(null)
-      } catch (requestError) {
-        if (
-          controller.signal.aborted ||
-          requestRef.current !== controller
-        ) {
-          return
-        }
-        if (
-          requestError instanceof DOMException &&
-          requestError.name === 'AbortError'
-        ) {
-          return
-        }
-        setError(friendlyTelemetryError(requestError))
-      } finally {
-        if (requestRef.current === controller) requestRef.current = null
-        if (!silent && !controller.signal.aborted) setLoading(false)
-      }
-    },
-    [deviceId],
-  )
-
-  useEffect(() => {
-    setTelemetry(null)
-    setError(null)
-
-    if (!deviceId) return
-
-    void load()
-
-    const interval = window.setInterval(() => {
-      if (document.visibilityState === 'visible' && !requestRef.current) {
-        void load(true)
-      }
-    }, POLL_INTERVAL_MS)
-
-    return () => {
-      window.clearInterval(interval)
-      requestRef.current?.abort()
-      requestRef.current = null
-    }
-  }, [deviceId, load])
-
-  return {
-    telemetry,
-    loading,
-    error,
-    refresh: () => void load(false),
-  }
-}
-
-function friendlyTelemetryError(error: unknown): string {
-  const message = error instanceof Error ? error.message : ''
-
-  if (
-    !message ||
-    /internal server error|failed to fetch|networkerror|load failed/i.test(
-      message,
-    )
-  ) {
-    return 'Không kết nối được backend. Kiểm tra server rồi thử làm mới.'
-  }
-
-  return message
 }
 
 function useReducedMotion(): boolean {
@@ -1018,6 +513,36 @@ function useWebGLSupport(): boolean | null {
   }, [])
 
   return supported
+}
+
+function useIsMobile(): boolean {
+  const [isMobile, setIsMobile] = useState(false)
+
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 1023px)')
+    const update = () => setIsMobile(media.matches)
+
+    update()
+    media.addEventListener('change', update)
+    return () => media.removeEventListener('change', update)
+  }, [])
+
+  return isMobile
+}
+
+function layoutErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : ''
+
+  if (
+    !message ||
+    /internal server error|failed to fetch|networkerror|load failed/i.test(
+      message,
+    )
+  ) {
+    return 'Không lưu được vị trí. Kiểm tra backend rồi thử lại.'
+  }
+
+  return message
 }
 
 class SceneErrorBoundary extends Component<

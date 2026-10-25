@@ -3,6 +3,9 @@ const deviceController = require('../controllers/device');
 
 router.get('/', deviceController.listDevices);
 router.post('/', deviceController.upsertDevice);
+router.put('/attributes/all', deviceController.updateAllAttributes);
+router.post('/attributes/all', deviceController.updateAllAttributes);
+router.put('/attributes', deviceController.updateAllAttributes);
 router.put('/:id', deviceController.updateDevice);
 router.delete('/:id', deviceController.deleteDevice);
 router.get('/:id', deviceController.getDevice);

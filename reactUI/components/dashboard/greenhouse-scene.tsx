@@ -8,10 +8,14 @@ import {
   useState,
 } from 'react'
 import type { ComponentRef } from 'react'
-import { Canvas, useFrame, useThree } from '@react-three/fiber'
+import {
+  Canvas,
+  useFrame,
+  useThree,
+  type ThreeEvent,
+} from '@react-three/fiber'
 import {
   Billboard,
-  ContactShadows,
   Html,
   OrbitControls,
   RoundedBox,
@@ -19,11 +23,13 @@ import {
   useGLTF,
 } from '@react-three/drei'
 import * as THREE from 'three'
-import type { AssetModelVariant } from '@/lib/asset-type'
+import {
+  resolveAssetVariant,
+  type AssetModelVariant,
+} from '@/lib/asset-type'
 import { Greenhouse3DFallback } from './greenhouse-3d-fallback'
 import {
   DEFAULT_CAMERA_POSITION,
-  DEFAULT_CAMERA_TARGET,
   GROUND_GRID_DIVISIONS,
   GROUND_GRID_SIZE,
   GROUND_Y,
@@ -33,48 +39,87 @@ import {
   soilTopForVariant,
   treeHeightForVariant,
   type GreenhouseDevice,
-  type GreenhouseTelemetry,
+  type GreenhouseStation,
   type SoilHealth,
+  type StationLayout,
 } from './greenhouse-3d-types'
+import {
+  collidesWithStations,
+  snapStationPosition,
+} from './greenhouse-layout'
 
 if (typeof window !== 'undefined') {
   useGLTF.preload(TREE_GLTF_PATH)
 }
 
 export interface GreenhouseSceneProps {
-  variant: AssetModelVariant
-  devices: GreenhouseDevice[]
+  stations: GreenhouseStation[]
+  layout: Record<string, StationLayout>
+  selectedAssetId: string | null
   selectedDeviceId: string | null
-  telemetry: GreenhouseTelemetry | null
-  soilHealth: SoilHealth
-  waterLow: boolean
-  pumpOn: boolean
-  waitingForTelemetry: boolean
-  autoRotate: boolean
+  editMode: boolean
+  isMobile: boolean
+  paused: boolean
   resetSignal: number
   reducedMotion: boolean
+  onSelectAsset: (assetId: string | null) => void
   onSelectDevice: (deviceId: string) => void
-  onSelectAsset: () => void
+  onMoveStation: (
+    assetId: string,
+    position: StationLayout,
+  ) => void | Promise<void>
+  onLayoutError: (message: string) => void
 }
 
 export function GreenhouseScene({
-  variant,
-  devices,
+  stations,
+  layout,
+  selectedAssetId,
   selectedDeviceId,
-  telemetry,
-  soilHealth,
-  waterLow,
-  pumpOn,
-  waitingForTelemetry,
-  autoRotate,
+  editMode,
+  isMobile,
+  paused,
   resetSignal,
   reducedMotion,
-  onSelectDevice,
   onSelectAsset,
+  onSelectDevice,
+  onMoveStation,
+  onLayoutError,
 }: GreenhouseSceneProps) {
+  const firstStation = stations[0]
+  const fallbackVariant = firstStation
+    ? resolveAssetVariant(firstStation.asset.type)
+    : 'potted'
+  const nodeCount = stations.reduce(
+    (total, station) => total + station.devices.length,
+    0,
+  )
+  const revision = useMemo(
+    () =>
+      JSON.stringify({
+        selectedAssetId,
+        selectedDeviceId,
+        editMode,
+        stations: stations.map((station) => ({
+          id: station.asset._id,
+          x: station.position.x,
+          z: station.position.z,
+          online: station.online,
+          pumpOn: station.pumpOn,
+          telemetry: station.primaryTelemetry,
+          devices: station.devices.map((device) => [
+            device._id,
+            device.online,
+          ]),
+        })),
+      }),
+    [editMode, selectedAssetId, selectedDeviceId, stations],
+  )
+
   return (
     <Canvas
-      dpr={[1, 1.5]}
+      frameloop={paused ? 'never' : 'demand'}
+      dpr={isMobile ? 1 : [1, 1.25]}
       camera={{
         position: DEFAULT_CAMERA_POSITION,
         fov: 35,
@@ -82,7 +127,7 @@ export function GreenhouseScene({
         far: 100,
       }}
       gl={{
-        antialias: true,
+        antialias: !isMobile,
         alpha: true,
         powerPreference: 'high-performance',
       }}
@@ -90,69 +135,57 @@ export function GreenhouseScene({
         gl.toneMapping = THREE.ACESFilmicToneMapping
         gl.toneMappingExposure = 1.05
       }}
-      onPointerMissed={onSelectAsset}
+      onPointerMissed={() => {
+        if (!editMode) onSelectAsset(null)
+      }}
       fallback={
         <Greenhouse3DFallback
-          variant={variant}
-          nodeCount={devices.length}
+          variant={fallbackVariant}
+          nodeCount={nodeCount}
+          treeCount={stations.length}
         />
       }
-      aria-label="Mô hình 3D cây và các node cảm biến"
+      aria-label="Mô hình 3D khu vườn và các node cảm biến"
       className="h-full w-full"
     >
+      <FpsLimiter fps={30} />
+      <SceneInvalidator revision={revision} paused={paused} />
+      <WaterAnimationLoop
+        active={
+          !paused &&
+          !reducedMotion &&
+          stations.some((station) => station.pumpOn)
+        }
+      />
       <Lights />
       <GroundGrid />
-
-      <Suspense key={variant} fallback={<TreePlaceholder variant={variant} />}>
-        <TreeAssembly
-          variant={variant}
-          soilHealth={soilHealth}
-          reducedMotion={reducedMotion}
-          onSelectAsset={onSelectAsset}
-        />
-        <ContactShadows
-          position={[0, GROUND_Y + 0.008, 0]}
-          opacity={0.28}
-          scale={6.2}
-          blur={3.2}
-          far={2.6}
-          resolution={512}
-          frames={1}
-          color="#2f4f3a"
-        />
-      </Suspense>
-
-      {devices.map((device, index) => (
-        <SensorNode
-          key={device._id}
-          device={device}
-          index={index}
-          position={getNodePosition(device, index, devices.length, variant)}
-          selected={device._id === selectedDeviceId}
-          warning={
-            device._id === selectedDeviceId &&
-            (waterLow || soilHealth === 'dry' || soilHealth === 'wet')
-          }
-          valueLabel={
-            device._id === selectedDeviceId &&
-            telemetry?.soil_humidity !== null &&
-            telemetry?.soil_humidity !== undefined
-              ? `${Math.round(telemetry.soil_humidity)}% đất`
-              : null
-          }
-          reducedMotion={reducedMotion}
-          onSelect={onSelectDevice}
-        />
-      ))}
-
-      <WateringValve
-        variant={variant}
-        pumpOn={pumpOn}
-        waitingForTelemetry={waitingForTelemetry}
-        reducedMotion={reducedMotion}
+      <GroundClickPlane
+        editMode={editMode}
+        selectedAssetId={selectedAssetId}
+        layout={layout}
+        onMoveStation={onMoveStation}
+        onLayoutError={onLayoutError}
+        onSelectAsset={onSelectAsset}
       />
 
-      <CameraRig autoRotate={autoRotate} resetSignal={resetSignal} />
+      <Suspense fallback={<StationsPlaceholder stations={stations} />}>
+        {stations.map((station) => (
+          <TreeStation
+            key={station.asset._id}
+            station={station}
+            selected={station.asset._id === selectedAssetId}
+            selectedDeviceId={selectedDeviceId}
+            reducedMotion={reducedMotion}
+            onSelectAsset={onSelectAsset}
+            onSelectDevice={onSelectDevice}
+          />
+        ))}
+      </Suspense>
+
+      <CameraRig
+        resetSignal={resetSignal}
+        positions={stations.map((station) => station.position)}
+      />
     </Canvas>
   )
 }
@@ -182,55 +215,345 @@ function GroundGrid() {
   )
 }
 
-function CameraRig({
-  autoRotate,
-  resetSignal,
+function GroundClickPlane({
+  editMode,
+  selectedAssetId,
+  layout,
+  onMoveStation,
+  onLayoutError,
+  onSelectAsset,
 }: {
-  autoRotate: boolean
+  editMode: boolean
+  selectedAssetId: string | null
+  layout: Record<string, StationLayout>
+  onMoveStation: (
+    assetId: string,
+    position: StationLayout,
+  ) => void | Promise<void>
+  onLayoutError: (message: string) => void
+  onSelectAsset: (assetId: string | null) => void
+}) {
+  const handleClick = (event: ThreeEvent<MouseEvent>) => {
+    event.stopPropagation()
+
+    if (!editMode) {
+      onSelectAsset(null)
+      return
+    }
+
+    if (!selectedAssetId) {
+      onLayoutError('Chọn một cây trước, sau đó click điểm đích.')
+      return
+    }
+
+    const candidate = snapStationPosition(
+      event.point.x,
+      event.point.z,
+    )
+    if (collidesWithStations(selectedAssetId, candidate, layout)) {
+      onLayoutError(
+        'Vị trí này chồng lấn với cây khác. Chọn điểm khác.',
+      )
+      return
+    }
+
+    void onMoveStation(selectedAssetId, candidate)
+  }
+
+  return (
+    <mesh
+      rotation={[-Math.PI / 2, 0, 0]}
+      position={[0, GROUND_Y + 0.001, 0]}
+      onClick={handleClick}
+    >
+      <planeGeometry args={[GROUND_GRID_SIZE, GROUND_GRID_SIZE]} />
+      <meshBasicMaterial
+        transparent
+        opacity={0}
+        depthWrite={false}
+        colorWrite={false}
+      />
+    </mesh>
+  )
+}
+
+function FpsLimiter({ fps }: { fps: number }) {
+  const get = useThree((state) => state.get)
+  const set = useThree((state) => state.set)
+
+  useEffect(() => {
+    const store = get()
+    const original = store.invalidate
+    let lastFrame = 0
+    const limited = (frames?: number) => {
+      const now = performance.now()
+      if (now - lastFrame < 1000 / fps) return
+      lastFrame = now
+      original(frames)
+    }
+
+    set({ invalidate: limited })
+    return () => set({ invalidate: original })
+  }, [fps, get, set])
+
+  return null
+}
+
+function SceneInvalidator({
+  revision,
+  paused,
+}: {
+  revision: string
+  paused: boolean
+}) {
+  const get = useThree((state) => state.get)
+
+  useEffect(() => {
+    if (!paused) get().invalidate()
+  }, [get, paused, revision])
+
+  return null
+}
+
+function WaterAnimationLoop({ active }: { active: boolean }) {
+  const get = useThree((state) => state.get)
+
+  useEffect(() => {
+    if (!active) return
+
+    let raf = 0
+    const tick = () => {
+      get().invalidate()
+      raf = requestAnimationFrame(tick)
+    }
+
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [active, get])
+
+  return null
+}
+
+function CameraRig({
+  resetSignal,
+  positions,
+}: {
   resetSignal: number
+  positions: StationLayout[]
 }) {
   const controlsRef = useRef<ComponentRef<typeof OrbitControls>>(null)
-  const { camera } = useThree()
+  const { camera, get } = useThree()
+  const count = positions.length
 
   useEffect(() => {
     const controls = controlsRef.current
     if (!controls) return
+    if (!(camera instanceof THREE.PerspectiveCamera)) return
 
-    camera.position.set(...DEFAULT_CAMERA_POSITION)
-    controls.target.set(...DEFAULT_CAMERA_TARGET)
+    if (positions.length === 0) {
+      camera.position.set(...DEFAULT_CAMERA_POSITION)
+      controls.target.set(0, 0.9, 0)
+      controls.update()
+      return
+    }
+
+    const margin = 1.6
+    const xs = positions.map((position) => position.x)
+    const zs = positions.map((position) => position.z)
+    const minX = Math.min(...xs) - margin
+    const maxX = Math.max(...xs) + margin
+    const minZ = Math.min(...zs) - margin
+    const maxZ = Math.max(...zs) + margin
+    const centerX = (minX + maxX) / 2
+    const centerZ = (minZ + maxZ) / 2
+    const spanX = Math.max(maxX - minX, 2)
+    const spanZ = Math.max(maxZ - minZ, 2)
+    const fov = THREE.MathUtils.degToRad(camera.fov)
+    const verticalDistance = spanZ / (2 * Math.tan(fov / 2))
+    const horizontalDistance =
+      spanX / (2 * Math.tan(fov / 2) * Math.max(camera.aspect, 0.6))
+    const distance =
+      Math.max(verticalDistance, horizontalDistance, 5.5) * 1.18
+
+    camera.position.set(
+      centerX + distance * 0.55,
+      Math.max(2.8, distance * 0.55),
+      centerZ + distance * 0.85,
+    )
+    controls.target.set(centerX, 0.9, centerZ)
     controls.update()
-  }, [camera, resetSignal])
+  }, [camera, count, resetSignal])
 
   return (
     <OrbitControls
       ref={controlsRef}
       makeDefault
-      target={DEFAULT_CAMERA_TARGET}
       enablePan={false}
-      enableDamping
-      dampingFactor={0.08}
+      enableDamping={false}
       minDistance={3.2}
-      maxDistance={8.5}
+      maxDistance={22}
       minPolarAngle={0.35}
       maxPolarAngle={Math.PI / 2.06}
-      autoRotate={autoRotate}
-      autoRotateSpeed={0.7}
+      onChange={() => get().invalidate()}
     />
+  )
+}
+
+function StationsPlaceholder({ stations }: { stations: GreenhouseStation[] }) {
+  return (
+    <>
+      {stations.map((station) => (
+        <group
+          key={station.asset._id}
+          position={[station.position.x, 0, station.position.z]}
+        >
+          <TreePlaceholder
+            variant={resolveAssetVariant(station.asset.type)}
+          />
+        </group>
+      ))}
+    </>
+  )
+}
+
+interface TreeStationProps {
+  station: GreenhouseStation
+  selected: boolean
+  selectedDeviceId: string | null
+  reducedMotion: boolean
+  onSelectAsset: (assetId: string | null) => void
+  onSelectDevice: (deviceId: string) => void
+}
+
+function TreeStation({
+  station,
+  selected,
+  selectedDeviceId,
+  reducedMotion,
+  onSelectAsset,
+  onSelectDevice,
+}: TreeStationProps) {
+  const variant = resolveAssetVariant(station.asset.type)
+  const [hovered, setHovered] = useState(false)
+  const get = useThree((state) => state.get)
+  useCursor(hovered)
+
+  const soilTop = soilTopForVariant(variant)
+  const treeTop = soilTop + treeHeightForVariant(variant)
+  const soil = station.primaryTelemetry?.soil_humidity
+
+  return (
+    <group
+      position={[station.position.x, 0, station.position.z]}
+      onClick={(event) => {
+        event.stopPropagation()
+        onSelectAsset(station.asset._id)
+        get().invalidate()
+      }}
+      onPointerEnter={(event) => {
+        event.stopPropagation()
+        setHovered(true)
+        get().invalidate()
+      }}
+      onPointerLeave={(event) => {
+        event.stopPropagation()
+        setHovered(false)
+        get().invalidate()
+      }}
+    >
+      <TreeAssembly
+        variant={variant}
+        soilHealth={station.soilHealth}
+        highlighted={selected || hovered}
+      />
+
+      {station.devices.map((device, index) => {
+        const deviceTelemetry = station.telemetryByDevice[device._id] ?? null
+        const isSelected = device._id === selectedDeviceId
+        const deviceSoil = deviceTelemetry?.soil_humidity
+
+        return (
+          <SensorNode
+            key={device._id}
+            device={device}
+            position={getNodePosition(
+              device,
+              index,
+              station.devices.length,
+              variant,
+            )}
+            selected={isSelected}
+            warning={
+              isSelected &&
+              (station.waterLow ||
+                station.soilHealth === 'dry' ||
+                station.soilHealth === 'wet')
+            }
+            valueLabel={
+              isSelected && deviceSoil !== null && deviceSoil !== undefined
+                ? `${Math.round(deviceSoil)}% ??t`
+                : null
+            }
+            onSelect={onSelectDevice}
+          />
+        )
+      })}
+
+      <WateringValve
+        variant={variant}
+        pumpOn={station.pumpOn}
+        selected={selected}
+        reducedMotion={reducedMotion}
+      />
+
+      {(selected || hovered) && (
+        <Html
+          position={[0, treeTop + 0.24, 0]}
+          center
+          distanceFactor={9}
+          zIndexRange={[30, 0]}
+          style={{ pointerEvents: 'none' }}
+        >
+          <div
+            className={`flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-[10px] shadow-sm ${
+              selected
+                ? 'border-emerald-400 bg-emerald-50/95 text-emerald-950'
+                : 'border-white/80 bg-white/95 text-slate-700'
+            }`}
+          >
+            <span
+              className={`inline-block size-1.5 rounded-full ${
+                station.online ? 'bg-emerald-500' : 'bg-red-500'
+              }`}
+            />
+            <span className="max-w-[100px] truncate font-semibold">
+              {station.asset.name}
+            </span>
+            {soil !== null && soil !== undefined && (
+              <span className="text-slate-500">
+                ? {Math.round(soil)}% ??t
+              </span>
+            )}
+            {station.pumpOn && (
+              <span className="font-semibold text-emerald-700">? T??i</span>
+            )}
+          </div>
+        </Html>
+      )}
+    </group>
   )
 }
 
 interface TreeAssemblyProps {
   variant: AssetModelVariant
   soilHealth: SoilHealth
-  reducedMotion: boolean
-  onSelectAsset: () => void
+  highlighted: boolean
 }
 
 function TreeAssembly({
   variant,
   soilHealth,
-  reducedMotion,
-  onSelectAsset,
+  highlighted,
 }: TreeAssemblyProps) {
   const { scene } = useGLTF(TREE_GLTF_PATH)
   const source = useMemo(() => {
@@ -253,10 +576,6 @@ function TreeAssembly({
     () => (source ? createTreeModel(source, variant) : null),
     [source, variant],
   )
-  const swayRef = useRef<THREE.Group>(null)
-  const [hovered, setHovered] = useState(false)
-  useCursor(hovered)
-
   useEffect(() => {
     if (!tree) return
 
@@ -281,23 +600,6 @@ function TreeAssembly({
     }
   }, [tree])
 
-  useFrame((state) => {
-    if (!swayRef.current) return
-
-    const lean =
-      soilHealth === 'dry' ? 0.035 : soilHealth === 'wet' ? -0.01 : 0
-
-    if (reducedMotion) {
-      swayRef.current.rotation.z = lean
-      swayRef.current.rotation.x = 0
-      return
-    }
-
-    const time = state.clock.elapsedTime
-    swayRef.current.rotation.z = Math.sin(time * 0.9) * 0.008 + lean
-    swayRef.current.rotation.x = Math.cos(time * 0.7) * 0.005
-  })
-
   if (!tree) return <TreePlaceholder variant={variant} />
 
   const soilTop = soilTopForVariant(variant)
@@ -305,44 +607,28 @@ function TreeAssembly({
   const hoverRingOuter = variant === 'potted' ? 0.6 : 0.74
   return (
     <group>
-      <group
-        onClick={(event) => {
-          event.stopPropagation()
-          onSelectAsset()
-        }}
-        onPointerEnter={(event) => {
-          event.stopPropagation()
-          setHovered(true)
-        }}
-        onPointerLeave={(event) => {
-          event.stopPropagation()
-          setHovered(false)
-        }}
-      >
-        {variant === 'potted' ? (
-          <Pot soilHealth={soilHealth} />
-        ) : (
-          <GroundBed soilHealth={soilHealth} />
-        )}
+      {variant === 'potted' ? (
+        <Pot soilHealth={soilHealth} />
+      ) : (
+        <GroundBed soilHealth={soilHealth} />
+      )}
 
-        <group ref={swayRef} position={[0, soilTop, 0]}>
-          <primitive object={tree.root} />
-        </group>
-
-        <mesh
-          rotation={[-Math.PI / 2, 0, 0]}
-          position={[0, GROUND_Y + 0.009, 0]}
-        >
-          <ringGeometry args={[hoverRingInner, hoverRingOuter, 40]} />
-          <meshBasicMaterial
-            color={hovered ? '#10b981' : '#a7c9b2'}
-            transparent
-            opacity={hovered ? 0.55 : 0.28}
-            side={THREE.DoubleSide}
-          />
-        </mesh>
+      <group position={[0, soilTop, 0]}>
+        <primitive object={tree.root} />
       </group>
 
+      <mesh
+        rotation={[-Math.PI / 2, 0, 0]}
+        position={[0, GROUND_Y + 0.009, 0]}
+      >
+        <ringGeometry args={[hoverRingInner, hoverRingOuter, 40]} />
+        <meshBasicMaterial
+          color={highlighted ? '#10b981' : '#a7c9b2'}
+          transparent
+          opacity={highlighted ? 0.62 : 0.28}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
     </group>
   )
 }
@@ -487,29 +773,25 @@ function TreePlaceholder({ variant }: { variant: AssetModelVariant }) {
 
 interface SensorNodeProps {
   device: GreenhouseDevice
-  index: number
   position: [number, number, number]
   selected: boolean
   warning: boolean
   valueLabel: string | null
-  reducedMotion: boolean
   onSelect: (deviceId: string) => void
 }
 
 function SensorNode({
   device,
-  index,
   position,
   selected,
   warning,
   valueLabel,
-  reducedMotion,
   onSelect,
 }: SensorNodeProps) {
   const [hovered, setHovered] = useState(false)
-  const glowRef = useRef<THREE.Mesh>(null)
-  const ringRef = useRef<THREE.Mesh>(null)
+  const get = useThree((state) => state.get)
   useCursor(hovered)
+  const showLabel = selected || hovered
 
   const color = !device.online
     ? SCENE_COLORS.nodeOffline
@@ -519,26 +801,9 @@ function SensorNode({
         ? SCENE_COLORS.nodeSelected
         : SCENE_COLORS.nodeOnline
 
-  useFrame((state) => {
-    const time = state.clock.elapsedTime
-    const pulse = reducedMotion ? 0 : (Math.sin(time * 2.1 + index * 1.2) + 1) / 2
-
-    if (glowRef.current) {
-      glowRef.current.scale.setScalar(1 + pulse * 0.4)
-      const material = glowRef.current.material
-      if (material instanceof THREE.MeshBasicMaterial) {
-        material.opacity = 0.12 + (1 - pulse) * 0.12
-      }
-    }
-
-    if (ringRef.current) {
-      ringRef.current.scale.setScalar(1 + pulse * 0.55)
-    }
-  })
-
   return (
     <group position={position} scale={hovered ? 1.08 : 1}>
-      <mesh ref={glowRef}>
+      <mesh>
         <sphereGeometry args={[0.13, 16, 16]} />
         <meshBasicMaterial
           color={color}
@@ -560,7 +825,7 @@ function SensorNode({
       </mesh>
 
       <Billboard>
-        <mesh ref={ringRef}>
+        <mesh>
           <ringGeometry args={[0.11, 0.132, 28]} />
           <meshBasicMaterial
             color={color}
@@ -593,14 +858,17 @@ function SensorNode({
         onPointerOver={(event) => {
           event.stopPropagation()
           setHovered(true)
+          get().invalidate()
         }}
         onPointerOut={(event) => {
           event.stopPropagation()
           setHovered(false)
+          get().invalidate()
         }}
         onClick={(event) => {
           event.stopPropagation()
           onSelect(device._id)
+          get().invalidate()
         }}
       >
         <sphereGeometry args={[0.17, 12, 12]} />
@@ -612,33 +880,35 @@ function SensorNode({
         />
       </mesh>
 
-      <Html
-        position={[0, 0.2, 0]}
-        center
-        distanceFactor={6}
-        zIndexRange={[40, 0]}
-        style={{ pointerEvents: 'none' }}
-      >
-        <div
-          className={`flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-1 text-[10px] shadow-sm backdrop-blur ${
-            selected
-              ? 'border-emerald-400 bg-emerald-50/95 text-emerald-950'
-              : 'border-white/80 bg-white/95 text-slate-700'
-          }`}
+      {showLabel && (
+        <Html
+          position={[0, 0.2, 0]}
+          center
+          distanceFactor={8}
+          zIndexRange={[40, 0]}
+          style={{ pointerEvents: 'none' }}
         >
-          <span
-            className={`inline-block size-1.5 rounded-full ${
-              device.online ? 'bg-emerald-500' : 'bg-red-500'
+          <div
+            className={`flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-1 text-[10px] shadow-sm ${
+              selected
+                ? 'border-emerald-400 bg-emerald-50/95 text-emerald-950'
+                : 'border-white/80 bg-white/95 text-slate-700'
             }`}
-          />
-          <span className="max-w-[120px] truncate font-semibold">
-            {device.name || device._id}
-          </span>
-          {valueLabel && (
-            <span className="text-slate-500">· {valueLabel}</span>
-          )}
-        </div>
-      </Html>
+          >
+            <span
+              className={`inline-block size-1.5 rounded-full ${
+                device.online ? 'bg-emerald-500' : 'bg-red-500'
+              }`}
+            />
+            <span className="max-w-[120px] truncate font-semibold">
+              {device.name || device._id}
+            </span>
+            {valueLabel && (
+              <span className="text-slate-500">· {valueLabel}</span>
+            )}
+          </div>
+        </Html>
+      )}
     </group>
   )
 }
@@ -646,43 +916,25 @@ function SensorNode({
 function WateringValve({
   variant,
   pumpOn,
-  waitingForTelemetry,
+  selected,
   reducedMotion,
 }: {
   variant: AssetModelVariant
   pumpOn: boolean
-  waitingForTelemetry: boolean
+  selected: boolean
   reducedMotion: boolean
 }) {
-  const handleRef = useRef<THREE.Group>(null)
   const soilTop = soilTopForVariant(variant)
-
-  useFrame((_, delta) => {
-    if (!handleRef.current) return
-    const target = pumpOn ? Math.PI / 2 : 0
-
-    if (reducedMotion) {
-      handleRef.current.rotation.y = target
-      return
-    }
-
-    handleRef.current.rotation.y = THREE.MathUtils.damp(
-      handleRef.current.rotation.y,
-      target,
-      8,
-      delta,
-    )
-  })
 
   return (
     <group>
       <Pipe
-        position={[1.35, 0.2, 0.38]}
+        position={[0.835, 0.2, 0.38]}
         rotation={[0, 0, Math.PI / 2]}
-        length={1.26}
+        length={0.23}
       />
-      <mesh position={[1.98, 0.25, 0.38]}>
-        <cylinderGeometry args={[0.05, 0.05, 0.12, 12]} />
+      <mesh position={[0.95, 0.2, 0.38]}>
+        <sphereGeometry args={[0.045, 12, 12]} />
         <meshStandardMaterial
           color={SCENE_COLORS.valveBody}
           roughness={0.55}
@@ -725,7 +977,10 @@ function WateringValve({
         />
       </RoundedBox>
 
-      <group ref={handleRef} position={[0.72, 0.395, 0.38]}>
+      <group
+        position={[0.72, 0.395, 0.38]}
+        rotation={[0, pumpOn ? Math.PI / 2 : 0, 0]}
+      >
         <mesh rotation={[Math.PI / 2, 0, 0]}>
           <torusGeometry args={[0.075, 0.018, 8, 20]} />
           <meshStandardMaterial
@@ -744,28 +999,25 @@ function WateringValve({
         </mesh>
       </group>
 
-      <Html
-        position={[0.72, 1.16, 0.38]}
-        center
-        distanceFactor={6}
-        zIndexRange={[30, 0]}
-        style={{ pointerEvents: 'none' }}
-      >
-        <div
-          className={`whitespace-nowrap rounded-full border px-2 py-1 text-[10px] font-semibold shadow-sm backdrop-blur ${
-            pumpOn
-              ? 'border-emerald-300 bg-emerald-50/95 text-emerald-900'
-              : 'border-slate-200 bg-white/95 text-slate-600'
-          }`}
+      {selected && (
+        <Html
+          position={[0.72, 1.16, 0.38]}
+          center
+          distanceFactor={8}
+          zIndexRange={[30, 0]}
+          style={{ pointerEvents: 'none' }}
         >
-          Van tưới ·{' '}
-          {pumpOn
-            ? waitingForTelemetry
-              ? 'Đang chờ dữ liệu'
-              : 'ĐANG MỞ'
-            : 'ĐANG ĐÓNG'}
-        </div>
-      </Html>
+          <div
+            className={`whitespace-nowrap rounded-full border px-2 py-1 text-[10px] font-semibold shadow-sm ${
+              pumpOn
+                ? 'border-emerald-300 bg-emerald-50/95 text-emerald-900'
+                : 'border-slate-200 bg-white/95 text-slate-600'
+            }`}
+          >
+            Van tưới · {pumpOn ? 'ĐANG MỞ' : 'ĐANG ĐÓNG'}
+          </div>
+        </Html>
+      )}
 
       {pumpOn && (
         <WaterStream soilTop={soilTop} reducedMotion={reducedMotion} />

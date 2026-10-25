@@ -4,7 +4,9 @@ const userSchema = new Schema(
 	{
 		username: { type: String, required: true, unique: true, trim: true, lowercase: true, minlength: 3, maxlength: 40 },
 		password: { type: String, required: true, select: false },
-		priority: { type: Number },
+		priority: { type: Number, default: 1 },
+		role: { type: String, enum: ['admin', 'user'], default: 'user' },
+		turnOnPump: { type: Boolean, default: false },
 		status_online: { type: Boolean, default: false },
 	},
 	{ timestamps: true }

@@ -103,6 +103,36 @@ async function updateAttributes(req, res) {
 	res.json(attr);
 }
 
+async function updateAllAttributes(req, res) {
+	const updates = {};
+	for (const field of DEVICE_ATTRIBUTE_FIELDS) {
+		if (req.body[field] !== undefined) updates[field] = req.body[field] === '' ? null : req.body[field];
+	}
+	if (!Object.keys(updates).length) {
+		return res.status(400).json({ error: 'Không có dữ liệu thuộc tính cần cập nhật' });
+	}
+
+	// 1. Cập nhật tất cả các bản ghi Attribute hiện có
+	await Attribute.updateMany({}, { $set: updates });
+
+	// 2. Đảm bảo tất cả các thiết bị đều có Attribute được upsert
+	const devices = await Device.find().select('_id');
+	for (const dev of devices) {
+		await Attribute.findOneAndUpdate(
+			{ deviceId: dev._id },
+			{ $set: updates },
+			{ upsert: true, new: true }
+		);
+	}
+
+	const updatedAttributes = await Attribute.find();
+	res.json({
+		message: 'Đã cập nhật cấu hình ngưỡng an toàn cho toàn bộ thiết bị',
+		updates,
+		attributes: updatedAttributes,
+	});
+}
+
 module.exports = {
 	listDevices,
 	upsertDevice,
@@ -112,4 +142,5 @@ module.exports = {
 	getDeviceTelemetry,
 	sendCommand,
 	updateAttributes,
+	updateAllAttributes,
 };

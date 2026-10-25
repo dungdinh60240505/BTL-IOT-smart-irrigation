@@ -29,6 +29,7 @@ app.get('/', authenticateToken, (req, res) => res.sendFile(path.join(__dirname, 
   headers: { 'Content-Type': 'text/html; charset=utf-8' },
 }));
 app.use('/api/auth', wrap(require('./routes/auth')));
+app.use('/api/users', wrap(require('./routes/user')));
 app.use('/api/assets', wrap(require('./routes/assets')));
 app.use('/api/devices', wrap(require('./routes/devices')));
 
