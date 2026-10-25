@@ -4,7 +4,8 @@ const { Schema, model } = require('mongoose');
 const assetSchema = new Schema(
   {
     name: { type: String, required: true },
-    type: { type: String, default: 'plant' },
+    //pot, no_pot, outdoor, indoor
+    type: { type: String, default: 'pot' },
   },
   { timestamps: true }
 );

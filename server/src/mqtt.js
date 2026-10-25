@@ -15,7 +15,7 @@ function initMqtt() {
 
   client.on('message', async (topic, buf) => {
     const raw = buf.toString();
-    const [kind, deviceId] = topic.split('/');
+    const [, kind, deviceId] = topic.split('/');
     if (!deviceId) return;
 
     console.log(`[mqtt] nhan du lieu tren ${topic}: ${raw}`);

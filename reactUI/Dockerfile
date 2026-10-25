@@ -15,6 +15,10 @@ RUN pnpm install --frozen-lockfile || pnpm install
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
+
+ARG INTERNAL_API_URL=http://server:3001
+ENV INTERNAL_API_URL=$INTERNAL_API_URL
+
 RUN pnpm run build
 
 # Stage 2: Runner

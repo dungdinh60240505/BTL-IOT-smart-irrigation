@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import dynamic from 'next/dynamic'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import {
   Area,
   AreaChart,
@@ -53,6 +54,19 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { apiRequest } from '@/lib/api'
+import {
+  ASSET_TYPE_OPTIONS,
+  assetTypeLabel,
+  resolveAssetVariant,
+} from '@/lib/asset-type'
+
+const Greenhouse3D = dynamic(
+  () => import('@/components/dashboard/greenhouse-3d'),
+  {
+    ssr: false,
+    loading: () => <Dashboard3DSkeleton />,
+  },
+)
 
 export interface DeviceItem {
   _id: string
@@ -118,6 +132,25 @@ function SectionHeading({ eyebrow, title }: { eyebrow: string; title: string }) 
       </p>
       <h2 className="text-lg font-semibold tracking-tight text-slate-900">{title}</h2>
     </div>
+  )
+}
+
+function Dashboard3DSkeleton() {
+  return (
+    <Card className="mb-8 overflow-hidden border-emerald-100/90 bg-white/95 shadow-xs">
+      <CardHeader className="border-b border-emerald-100/70 px-4 py-4 sm:px-5">
+        <div className="space-y-2">
+          <div className="h-2.5 w-36 rounded-full bg-emerald-100" />
+          <div className="h-4 w-48 rounded-full bg-slate-200" />
+        </div>
+      </CardHeader>
+      <CardContent className="p-3 sm:p-5">
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(300px,1fr)]">
+          <div className="h-[320px] animate-pulse rounded-2xl bg-gradient-to-br from-emerald-50 via-white to-cyan-50 sm:h-[380px] xl:h-[460px]" />
+          <div className="h-[320px] animate-pulse rounded-2xl bg-slate-100 xl:h-[460px]" />
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 
@@ -453,7 +486,7 @@ function DataTable({
                         </TableCell>
                         <TableCell className="text-xs text-black">
                           <Badge variant="outline" className="border-emerald-300 text-emerald-800 bg-emerald-50 font-normal">
-                            {a.type || 'plant'}
+                            {assetTypeLabel(a.type)}
                           </Badge>
                         </TableCell>
                         <TableCell className="text-xs text-black font-medium">
@@ -853,6 +886,31 @@ function AuthScreen({
   )
 }
 
+function AssetTypeSelect({
+  id,
+  value,
+  onChange,
+}: {
+  id: string
+  value: string
+  onChange: (value: string) => void
+}) {
+  return (
+    <select
+      id={id}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      className="mt-1 flex h-9 w-full rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm text-black outline-none"
+    >
+      {ASSET_TYPE_OPTIONS.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  )
+}
+
 function AddModal({
   kind,
   assets,
@@ -865,7 +923,9 @@ function AddModal({
   onSuccess: () => void
 }) {
   const [name, setName] = useState('')
-  const [type, setType] = useState(kind === 'assets' ? 'plant' : 'sensor')
+  const [type, setType] = useState(
+    kind === 'assets' ? 'potted' : 'sensor',
+  )
   const [deviceId, setDeviceId] = useState('')
   const [selectedAssetId, setSelectedAssetId] = useState(assets[0]?._id || '')
   const [error, setError] = useState('')
@@ -939,13 +999,14 @@ function AddModal({
                 </div>
                 <div>
                   <Label htmlFor="asset-type">Loại cây / Mục đích</Label>
-                  <Input
+                  <AssetTypeSelect
                     id="asset-type"
                     value={type}
-                    onChange={(e) => setType(e.target.value)}
-                    placeholder="vd: plant, greenhouse, garden..."
-                    className="text-black mt-1"
+                    onChange={setType}
                   />
+                  <p className="mt-1 text-[10px] text-slate-500">
+                    Dùng để chọn mô hình 3D có chậu hoặc trồng trực tiếp.
+                  </p>
                 </div>
               </>
             ) : (
@@ -1075,7 +1136,9 @@ function DetailModal({
 
   const [isEditing, setIsEditing] = useState(false)
   const [name, setName] = useState(data.name || '')
-  const [type, setType] = useState(data.type || '')
+  const [type, setType] = useState(
+    isAsset ? resolveAssetVariant(data.type) : data.type || '',
+  )
   const [assetId, setAssetId] = useState(data.assetId || '')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -1084,6 +1147,7 @@ function DetailModal({
     if (val === null || val === undefined) return 'Chưa có'
     if (key === 'online') return val ? 'Trực tuyến (Online)' : 'Ngoại tuyến (Offline)'
     if (key === 'pumpState') return val === 'ON' ? 'Đang bật' : 'Đang tắt'
+    if (key === 'type' && isAsset) return assetTypeLabel(val)
     if (key === 'assetId') {
       const ast = assets.find((a) => a._id === val)
       return ast ? `${ast.name} (${val})` : String(val)
@@ -1231,12 +1295,20 @@ function DetailModal({
                 <Label htmlFor="edit-type">
                   {isDevice ? 'Loại thiết bị' : 'Loại cây / Mục đích'}
                 </Label>
-                <Input
-                  id="edit-type"
-                  value={type}
-                  onChange={(e) => setType(e.target.value)}
-                  className="text-black mt-1"
-                />
+                {isDevice ? (
+                  <Input
+                    id="edit-type"
+                    value={type}
+                    onChange={(e) => setType(e.target.value)}
+                    className="text-black mt-1"
+                  />
+                ) : (
+                  <AssetTypeSelect
+                    id="edit-type"
+                    value={type}
+                    onChange={setType}
+                  />
+                )}
               </div>
 
               {isDevice && (
@@ -1898,6 +1970,24 @@ export default function Page() {
     setUser(null)
   }
 
+  const selectedDashboardAsset = useMemo(
+    () =>
+      assets.find((asset) => asset._id === selectedDashboardAssetId) ?? null,
+    [assets, selectedDashboardAssetId],
+  )
+
+  const selectedAssetDevices = useMemo(
+    () =>
+      devices.filter((device) => {
+        const assetId =
+          typeof device.assetId === 'object' && device.assetId !== null
+            ? (device.assetId as any)._id
+            : device.assetId
+        return String(assetId) === String(selectedDashboardAssetId)
+      }),
+    [devices, selectedDashboardAssetId],
+  )
+
   if (auth) {
     return (
       <AuthScreen
@@ -2176,7 +2266,15 @@ export default function Page() {
                 </div>
               </div>
 
-              <SectionHeading eyebrow="02 / Dữ liệu lịch sử đo đạc" title="Biểu đồ phân tích" />
+              <Greenhouse3D
+                asset={selectedDashboardAsset}
+                devices={selectedAssetDevices}
+                pumpOn={pumpOn}
+                waitingForTelemetry={waitingFirstTelemetry}
+                elapsedSeconds={elapsedSeconds}
+              />
+
+              <SectionHeading eyebrow="03 / Dữ liệu lịch sử đo đạc" title="Biểu đồ phân tích" />
               <div className="grid gap-4 xl:grid-cols-3">
                 <ChartCard title="Lịch sử nhiệt độ & độ ẩm (100 bản ghi mới nhất)">
                   <ResponsiveContainer width="100%" height="100%">
