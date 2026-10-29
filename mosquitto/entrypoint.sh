@@ -13,4 +13,8 @@ mosquitto_passwd -b "$PASSWD_FILE" "$MQTT_DEVICE_USER" "$MQTT_DEVICE_PASSWORD"
 chown mosquitto:mosquitto "$PASSWD_FILE" 2>/dev/null || true
 chmod 640 "$PASSWD_FILE"
 
+cp /mosquitto/config/acl /mosquitto/data/acl
+chown mosquitto:mosquitto /mosquitto/data/acl 2>/dev/null || true
+chmod 0700 /mosquitto/data/acl
+
 exec /usr/sbin/mosquitto -c /mosquitto/config/mosquitto.conf

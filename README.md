@@ -32,7 +32,11 @@ docker compose up --build
 - Frontend: http://localhost:4001
 - Backend: http://localhost:3001
 - MQTT: `localhost:1883` (bắt buộc username/password; ESP32 kết nối qua IP LAN của máy host)
-- MongoDB chỉ mở trên `127.0.0.1:27017` và yêu cầu tài khoản root trong `.env`.
+- MongoDB chỉ mở trên `127.0.0.1:27019` (tránh service Mongo local ở 27017) và
+  yêu cầu tài khoản root trong `.env`.
+
+`NEXT_PUBLIC_WS_URL` có thể để trống khi chạy local; đặt `wss://domain/ws` nếu
+frontend chạy sau reverse proxy HTTPS.
 
 Nếu volume MongoDB cũ đã được tạo trước khi bật auth, cần migrate/tạo user hoặc
 xóa volume dev rồi khởi động lại.

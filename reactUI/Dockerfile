@@ -18,6 +18,8 @@ ENV NODE_ENV=production
 
 ARG INTERNAL_API_URL=http://server:3001
 ENV INTERNAL_API_URL=$INTERNAL_API_URL
+ARG NEXT_PUBLIC_WS_URL=
+ENV NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL
 
 RUN pnpm run build
 
@@ -38,4 +40,4 @@ COPY --from=builder /app/public ./public
 
 EXPOSE 4001
 
-CMD ["pnpm", "start"]
+CMD ["node_modules/.bin/next", "start", "-p", "4001"]
