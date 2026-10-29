@@ -28,15 +28,7 @@ async function getUserById(req, res) {
  * Ưu tiên: role: 'admin' -> username: 'admin' -> tài khoản khởi tạo sớm nhất
  */
 async function findAdminUser() {
-	let admin = await User.findOne({
-		$or: [
-			{ role: 'admin' },
-			{ username: 'admin' },
-		],
-	});
-	if (!admin) {
-		admin = await User.findOne().sort({ createdAt: 1 });
-	}
+	const admin = await User.findOne({ role: 'admin' }).sort({ createdAt: 1 });
 	return admin;
 }
 
@@ -49,7 +41,10 @@ async function patchUser(req, res) {
 	const updates = {};
 
 	if (turnOnPump !== undefined) {
-		updates.turnOnPump = Boolean(turnOnPump);
+		if (typeof turnOnPump !== 'boolean') {
+			return res.status(400).json({ error: 'turnOnPump phai la true hoac false' });
+		}
+		updates.turnOnPump = turnOnPump;
 	}
 	if (priority !== undefined) {
 		const parsedPriority = Number(priority);
@@ -59,7 +54,10 @@ async function patchUser(req, res) {
 		updates.priority = parsedPriority;
 	}
 	if (status_online !== undefined) {
-		updates.status_online = Boolean(status_online);
+		if (typeof status_online !== 'boolean') {
+			return res.status(400).json({ error: 'status_online phai la true hoac false' });
+		}
+		updates.status_online = status_online;
 	}
 	if (role !== undefined && (role === 'admin' || role === 'user')) {
 		updates.role = role;
@@ -72,7 +70,7 @@ async function patchUser(req, res) {
 	// Không cho phép thay đổi quyền turnOnPump của tài khoản admin
 	if (updates.turnOnPump !== undefined) {
 		const target = await User.findById(id);
-		if (target && (target.role === 'admin' || target.username?.toLowerCase() === 'admin')) {
+		if (target && target.role === 'admin') {
 			delete updates.turnOnPump;
 		}
 	}
@@ -120,11 +118,14 @@ async function patchUserPumpPermission(req, res) {
 	if (!targetUser) return res.status(404).json({ error: 'Không tìm thấy người dùng' });
 
 	// Admin không cấp/thu hồi quyền của chính mình
-	if (targetUser.role === 'admin' || targetUser.username?.toLowerCase() === 'admin') {
+	if (targetUser.role === 'admin') {
 		return res.status(400).json({ error: 'Không thể cấp hoặc thu hồi quyền của chính tài khoản Quản trị viên (Admin)' });
 	}
 
-	const hasPermission = Boolean(turnOnPump);
+	if (typeof turnOnPump !== 'boolean') {
+		return res.status(400).json({ error: 'turnOnPump phai la true hoac false' });
+	}
+	const hasPermission = turnOnPump;
 
 	if (hasPermission) {
 		// 1. Cập nhật toàn bộ user turnOnPump: false trước rồi mới cập nhật user đó (vì 1 lúc chỉ 1 user có turnOnPump: true)

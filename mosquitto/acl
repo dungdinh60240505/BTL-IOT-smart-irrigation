@@ -1,0 +1,11 @@
+# Backend duoc doc telemetry/attributes va gui command.
+user backend
+topic read dt/telemetry/#
+topic read dt/attributes/#
+topic write dt/command/#
+
+# Moi thiet bi chi duoc ghi telemetry/attributes cua chinh no
+# va doc command cua chinh no. Username phai bang DEVICE_ID.
+pattern write dt/telemetry/%u
+pattern write dt/attributes/%u
+pattern read dt/command/%u

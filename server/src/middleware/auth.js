@@ -44,7 +44,7 @@ async function authenticateToken(req, res, next) {
 
 function isAdmin(user) {
 	if (!user) return false;
-	return user.role === 'admin' || user.username?.toLowerCase() === 'admin';
+	return user.role === 'admin';
 }
 
 function requireAdmin(req, res, next) {
@@ -54,5 +54,12 @@ function requireAdmin(req, res, next) {
 	next();
 }
 
-module.exports = { authenticateToken, requireAdmin, isAdmin };
+function requirePumpPermission(req, res, next) {
+	if (!req.user || (!isAdmin(req.user) && req.user.turnOnPump !== true)) {
+		return res.status(403).json({ error: 'Tai khoan chua duoc cap quyen dieu khien may bom' });
+	}
+	next();
+}
+
+module.exports = { authenticateToken, requireAdmin, requirePumpPermission, isAdmin };
 

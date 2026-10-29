@@ -9,7 +9,7 @@ function publicUser(user) {
 	return {
 		id: user._id,
 		username: user.username,
-		role: user.role || (user.username === 'admin' ? 'admin' : 'user'),
+		role: user.role,
 		priority: user.priority ?? 1,
 		turnOnPump: user.turnOnPump ?? false,
 		status_online: user.status_online,
@@ -41,16 +41,16 @@ function normalizeCredentials(body = {}) {
 async function register(req, res) {
 	const { username, password } = normalizeCredentials(req.body);
 	if (username.length < 3 || username.length > 40) return res.status(400).json({ error: 'username phai co 3-40 ky tu' });
+	if (username === 'admin') return res.status(400).json({ error: 'username admin duoc danh rieng cho tai khoan quan tri' });
 	if (password.length < PASSWORD_MIN_LENGTH) return res.status(400).json({ error: 'password phai co it nhat 8 ky tu' });
 	if (!config.jwtSecret) return res.status(500).json({ error: 'JWT_SECRET chua duoc cau hinh' });
 
-	const isAdminUser = username === 'admin' || req.body.role === 'admin';
 	try {
 		const user = await User.create({
 			username,
 			password: await bcrypt.hash(password, 12),
-			role: isAdminUser ? 'admin' : 'user',
-			turnOnPump: isAdminUser ? true : false,
+			role: 'user',
+			turnOnPump: false,
 			status_online: true,
 		});
 		const token = createToken(user);
@@ -73,9 +73,6 @@ async function login(req, res) {
 	}
 
 	user.status_online = true;
-	if (username === 'admin' && user.role !== 'admin') {
-		user.role = 'admin';
-	}
 	await user.save();
 	const token = createToken(user);
 	setAuthCookie(req, res, token);
@@ -92,6 +89,7 @@ async function updateAccount(req, res) {
 		if (typeof req.body.username !== 'string') return res.status(400).json({ error: 'username khong hop le' });
 		const username = req.body.username.trim().toLowerCase();
 		if (username.length < 3 || username.length > 40) return res.status(400).json({ error: 'username phai co 3-40 ky tu' });
+		if (username === 'admin') return res.status(400).json({ error: 'username admin duoc danh rieng cho tai khoan quan tri' });
 		updates.username = username;
 	}
 	if (req.body.password !== undefined) {

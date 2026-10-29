@@ -1,11 +1,18 @@
 const mqtt = require('mqtt');
-const { mqttUrl } = require('./config');
+const { mqttUrl, mqttUsername, mqttPassword } = require('./config');
 const { handleTelemetry, handleAttributes } = require('./services/telemetry');
+const { setMqttClient, sendDeviceCommand, sendWaterCommand } = require('./services/mqttPublisher');
 
 let client;
 
 function initMqtt() {
-  client = mqtt.connect(mqttUrl, { reconnectPeriod: 2000 });
+  client = mqtt.connect(mqttUrl, {
+    reconnectPeriod: 2000,
+    username: mqttUsername,
+    password: mqttPassword,
+    clientId: `iot-backend-${process.pid}`,
+  });
+  setMqttClient(client);
 
   client.on('connect', () => {
     console.log(`[mqtt] da ket noi ${mqttUrl}`);
@@ -37,31 +44,6 @@ function initMqtt() {
   });
 
   return client;
-}
-
-// Luong dieu khien: Web/App -> Backend -> dt/command/{device_id} -> ESP32
-function sendDeviceCommand(deviceId, action, state) {
-  return new Promise((resolve, reject) => {
-    if (!client?.connected) {
-      console.warn(`[mqtt] khong gui duoc lenh ${action} cho ${deviceId}: broker chua ket noi`);
-      return reject(new Error('Chua ket noi MQTT broker'));
-    }
-    const topic = `dt/command/${deviceId}`;
-    const payload = JSON.stringify({ action, state });
-    console.log(`[mqtt] gui lenh den ${topic}: ${payload}`);
-    client.publish(topic, payload, { qos: 1 }, (err) => {
-      if (err) {
-        console.error(`[mqtt] loi gui lenh den ${topic}:`, err.message);
-        return reject(err);
-      }
-      console.log(`[mqtt] da publish lenh den ${topic}`);
-      resolve();
-    });
-  });
-}
-
-function sendWaterCommand(deviceId, state) {
-  return sendDeviceCommand(deviceId, 'WATER', state);
 }
 
 module.exports = { initMqtt, sendDeviceCommand, sendWaterCommand };

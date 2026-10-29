@@ -4,10 +4,18 @@ services:
     image: eclipse-mosquitto:2
     container_name: iot_mosquitto
     restart: always
+    entrypoint: ["/bin/sh", "/mosquitto/config/entrypoint.sh"]
+    environment:
+      - MQTT_BACKEND_USER=${MQTT_BACKEND_USER:-backend}
+      - MQTT_BACKEND_PASSWORD=${MQTT_BACKEND_PASSWORD:?Dat MQTT_BACKEND_PASSWORD trong .env}
+      - MQTT_DEVICE_USER=${MQTT_DEVICE_USER:-esp32_01}
+      - MQTT_DEVICE_PASSWORD=${MQTT_DEVICE_PASSWORD:?Dat MQTT_DEVICE_PASSWORD trong .env}
     ports:
       - "1883:1883"
     volumes:
       - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./mosquitto/acl:/mosquitto/config/acl:ro
+      - ./mosquitto/entrypoint.sh:/mosquitto/config/entrypoint.sh:ro
       - mosquitto_data:/mosquitto/data
       - mosquitto_log:/mosquitto/log
     networks:
@@ -18,8 +26,11 @@ services:
     image: mongo:latest
     container_name: iot_mongodb
     restart: always
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_ROOT_USERNAME:-admin}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD:?Dat MONGO_ROOT_PASSWORD trong .env}
     ports:
-      - "27017:27017"
+      - "127.0.0.1:27017:27017"
     volumes:
       - mongodb_data:/data/db
     networks:
@@ -36,9 +47,14 @@ services:
       - "3001:3001"
     environment:
       - PORT=3001
-      - MONGO_URI=mongodb://mongodb:27017/smart_irrigation
+      - MONGO_URI=mongodb://${MONGO_ROOT_USERNAME:-admin}:${MONGO_ROOT_PASSWORD:?Dat MONGO_ROOT_PASSWORD trong .env}@mongodb:27017/smart_irrigation?authSource=admin
       - MQTT_URL=mqtt://mosquitto:1883
-      - JWT_SECRET=replace-with-a-long-random-secret
+      - MQTT_USERNAME=${MQTT_BACKEND_USER:-backend}
+      - MQTT_PASSWORD=${MQTT_BACKEND_PASSWORD:?Dat MQTT_BACKEND_PASSWORD trong .env}
+      - JWT_SECRET=${JWT_SECRET:?Dat JWT_SECRET trong .env}
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:?Dat ADMIN_PASSWORD trong .env}
+      - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:4001,http://localhost:3001}
       - OFFLINE_AFTER_SEC=30
       - DEFAULT_FLOW_RATE_LPM=2
     depends_on:

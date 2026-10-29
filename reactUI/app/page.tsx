@@ -18,6 +18,8 @@ import {
 } from 'recharts'
 import {
   Activity,
+  Bell,
+  CheckCheck,
   Droplets,
   LayoutDashboard,
   LogIn,
@@ -136,6 +138,28 @@ export interface UserItem {
   status_online?: boolean
   createdAt?: string
   updatedAt?: string
+}
+
+export interface NotificationItem {
+  _id: string
+  deviceId: string
+  assetId?: string | { _id: string; name?: string } | null
+  type: 'SOIL_LOW' | 'SOIL_HIGH' | 'WATER_LOW' | 'WATER_HIGH'
+  severity: 'warning' | 'critical'
+  message: string
+  value?: number | null
+  threshold?: number | null
+  active: boolean
+  read: boolean
+  createdAt: string
+  resolvedAt?: string | null
+}
+
+const NOTIFICATION_LABELS: Record<NotificationItem['type'], string> = {
+  SOIL_LOW: 'Độ ẩm đất thấp',
+  SOIL_HIGH: 'Độ ẩm đất cao',
+  WATER_LOW: 'Mực nước thấp',
+  WATER_HIGH: 'Mực nước cao',
 }
 
 type View = 'dashboard' | 'assets' | 'sensors' | 'telemetry' | 'history' | 'users' | 'profile' | 'settings'
@@ -1014,7 +1038,7 @@ function UsersTable({
                   displayedUsers.map((u) => {
                     const isSelf = currentUserId && (String(currentUserId) === String(u?._id))
                     const isPatching = patchingUserId === u?._id
-                    const isTargetAdmin = u?.role === 'admin' || u?.username?.toLowerCase() === 'admin'
+                    const isTargetAdmin = u?.role === 'admin'
 
                     return (
                       <TableRow key={u?._id || Math.random()} className="hover:bg-emerald-50/40 transition-colors">
@@ -1811,6 +1835,10 @@ export default function Page() {
   const [usersLoading, setUsersLoading] = useState<boolean>(false)
   const [patchingUserId, setPatchingUserId] = useState<string | null>(null)
   const [userActionMsg, setUserActionMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [notifications, setNotifications] = useState<NotificationItem[]>([])
+  const [notificationsOpen, setNotificationsOpen] = useState(false)
+  const [notificationsLoading, setNotificationsLoading] = useState(false)
+  const notificationsRef = useRef<HTMLDivElement>(null)
 
   // Data states
   const [devices, setDevices] = useState<DeviceItem[]>([])
@@ -1891,20 +1919,29 @@ export default function Page() {
       }
 
       // 2. Nếu bulk chưa xong hoặc fallback: cập nhật cho từng thiết bị
+      let savedDevices = bulkSaved ? devices.length : 0
       if (!bulkSaved && devices.length > 0) {
-        await Promise.all(
+        const results = await Promise.all(
           devices.map((d) =>
             apiRequest(`/api/devices/${encodeURIComponent(d._id)}/attributes`, {
               method: 'PUT',
               body: JSON.stringify(payload),
-            }).catch(async () => {
-              await apiRequest(`/api/devices/${encodeURIComponent(d._id)}`, {
+            }).then(() => true).catch(async () => {
+              return await apiRequest(`/api/devices/${encodeURIComponent(d._id)}`, {
                 method: 'PUT',
                 body: JSON.stringify(payload),
-              }).catch(() => null)
+              }).then(() => true).catch(() => false)
             })
           )
         )
+        savedDevices = results.filter(Boolean).length
+      }
+
+      if (!bulkSaved && savedDevices === 0) {
+        throw new Error('Không lưu được cấu hình. Vui lòng kiểm tra đăng nhập/quyền admin và backend.')
+      }
+      if (!bulkSaved && savedDevices < devices.length) {
+        throw new Error(`Chỉ lưu được ${savedDevices}/${devices.length} thiết bị. Vui lòng thử lại.`)
       }
 
       // 3. Cập nhật state devices để Dashboard nhận tức thì cho toàn bộ thiết bị
@@ -2136,9 +2173,66 @@ export default function Page() {
   }
 
   // Hàm cấp / thu hồi quyền bật máy bơm (patch field turnOnPump trong User)
+  const fetchNotifications = async () => {
+    if (!user) {
+      setNotifications([])
+      return
+    }
+    setNotificationsLoading(true)
+    try {
+      const data = await apiRequest<NotificationItem[]>('/api/notifications?limit=50')
+      setNotifications(Array.isArray(data) ? data : [])
+    } catch (err) {
+      console.error('Lỗi tải thông báo:', err)
+    } finally {
+      setNotificationsLoading(false)
+    }
+  }
+
+  const markNotificationRead = async (id: string) => {
+    try {
+      await apiRequest(`/api/notifications/${encodeURIComponent(id)}/read`, { method: 'PATCH' })
+      setNotifications((prev) => prev.map((item) => item._id === id ? { ...item, read: true } : item))
+    } catch (err) {
+      console.error('Lỗi đánh dấu thông báo đã đọc:', err)
+    }
+  }
+
+  const markAllNotificationsRead = async () => {
+    try {
+      await apiRequest('/api/notifications/read-all', { method: 'PATCH' })
+      setNotifications((prev) => prev.map((item) => ({ ...item, read: true })))
+    } catch (err) {
+      console.error('Lỗi đánh dấu tất cả thông báo:', err)
+    }
+  }
+
+  const unreadNotificationCount = notifications.filter((item) => !item.read).length
+
+  useEffect(() => {
+    if (!user) {
+      setNotifications([])
+      return
+    }
+    fetchNotifications()
+    const interval = window.setInterval(fetchNotifications, 15000)
+    return () => window.clearInterval(interval)
+  }, [user?.id])
+
+  useEffect(() => {
+    if (!notificationsOpen) return
+    const handlePointerDown = (event: MouseEvent) => {
+      if (notificationsRef.current && !notificationsRef.current.contains(event.target as Node)) {
+        setNotificationsOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handlePointerDown)
+    return () => document.removeEventListener('mousedown', handlePointerDown)
+  }, [notificationsOpen])
+
   const handleToggleUserPumpPermission = async (targetUser: UserItem, nextState: boolean) => {
     const isCurrentUserAdmin = Boolean(
-      user && (user.role === 'admin' || user.username?.toLowerCase() === 'admin')
+      user && user.role === 'admin'
     )
     if (!isCurrentUserAdmin) {
       setUserActionMsg({
@@ -2149,7 +2243,7 @@ export default function Page() {
       return
     }
 
-    const isTargetAdmin = targetUser.role === 'admin' || targetUser.username?.toLowerCase() === 'admin'
+    const isTargetAdmin = targetUser.role === 'admin'
     if (isTargetAdmin) {
       setUserActionMsg({
         type: 'error',
@@ -2171,7 +2265,7 @@ export default function Page() {
           return { ...u, turnOnPump: u._id === targetUser._id }
         } else {
           if (u._id === targetUser._id) return { ...u, turnOnPump: false }
-          if (u.role === 'admin' || u.username?.toLowerCase() === 'admin') return { ...u, turnOnPump: true }
+          if (u.role === 'admin') return { ...u, turnOnPump: true }
           return u
         }
       })
@@ -2288,6 +2382,10 @@ export default function Page() {
     fetchData()
   }, [])
 
+  useEffect(() => {
+    if (user?.id) fetchData()
+  }, [user?.id])
+
   // Tự động tải danh sách người dùng mỗi khi người dùng chuyển sang tab Quản lý người dùng
   useEffect(() => {
     if (view === 'users') {
@@ -2298,7 +2396,12 @@ export default function Page() {
   // Kết nối WebSocket để nhận dữ liệu Telemetry thời gian thực
   useEffect(() => {
     if (typeof window === 'undefined') return
-    const wsUrl = `ws://${window.location.hostname}:3001/ws`
+    const token = localStorage.getItem('auth_token')
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const wsBase = process.env.NEXT_PUBLIC_WS_URL || `${wsProtocol}//${window.location.hostname}:3001/ws`
+    const wsUrl = token
+      ? `${wsBase}${wsBase.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`
+      : wsBase
     let ws: WebSocket | null = null
 
     try {
@@ -2425,7 +2528,7 @@ export default function Page() {
     return () => {
       if (ws) ws.close()
     }
-  }, [devices])
+  }, [devices, user?.id])
 
   // Điều khiển máy bơm
   const handleTogglePump = async (checked: boolean) => {
@@ -2501,6 +2604,8 @@ export default function Page() {
     } catch { }
     localStorage.removeItem('auth_token')
     setUser(null)
+    setNotifications([])
+    setNotificationsOpen(false)
   }
 
   if (auth) {
@@ -2581,6 +2686,110 @@ export default function Page() {
         {/* Top Header */}
         <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-emerald-100 bg-white/85 px-5 backdrop-blur">
           <div className="flex items-center gap-3">
+            <div className="relative" ref={notificationsRef}>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Thông báo"
+                aria-expanded={notificationsOpen}
+                className="relative"
+                onClick={() => {
+                  if (!user) {
+                    setAuth(true)
+                    return
+                  }
+                  setNotificationsOpen((current) => !current)
+                  if (!notificationsOpen) fetchNotifications()
+                }}
+              >
+                <Bell className="size-5" />
+                {unreadNotificationCount > 0 && (
+                  <span className="absolute -right-0.5 -top-0.5 grid min-w-4 place-items-center rounded-full bg-rose-600 px-1 text-[9px] font-bold leading-4 text-white">
+                    {unreadNotificationCount > 9 ? '9+' : unreadNotificationCount}
+                  </span>
+                )}
+              </Button>
+
+              {notificationsOpen && user && (
+                <div className="absolute right-0 top-11 z-50 w-[min(92vw,380px)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl">
+                  <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">Thông báo</p>
+                      <p className="text-[10px] text-slate-500">
+                        {unreadNotificationCount > 0 ? `${unreadNotificationCount} chưa đọc` : 'Đã đọc tất cả'}
+                      </p>
+                    </div>
+                    {unreadNotificationCount > 0 && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 gap-1 px-2 text-[11px] text-emerald-700"
+                        onClick={markAllNotificationsRead}
+                      >
+                        <CheckCheck className="size-3.5" />
+                        Đọc tất cả
+                      </Button>
+                    )}
+                  </div>
+
+                  <div className="max-h-[min(60vh,420px)] overflow-y-auto">
+                    {notificationsLoading && notifications.length === 0 ? (
+                      <p className="px-4 py-8 text-center text-xs text-slate-500">Đang tải thông báo...</p>
+                    ) : notifications.length === 0 ? (
+                      <div className="px-4 py-8 text-center">
+                        <Bell className="mx-auto mb-2 size-6 text-slate-300" />
+                        <p className="text-xs font-medium text-slate-600">Chưa có thông báo</p>
+                        <p className="mt-1 text-[10px] text-slate-400">
+                          Hệ thống sẽ tạo thông báo khi độ ẩm đất hoặc mực nước vượt ngưỡng.
+                        </p>
+                      </div>
+                    ) : (
+                      notifications.map((item) => (
+                        <button
+                          key={item._id}
+                          type="button"
+                          onClick={() => markNotificationRead(item._id)}
+                          className={`flex w-full items-start gap-2.5 border-b border-slate-100 px-4 py-3 text-left transition-colors hover:bg-slate-50 ${
+                            item.read ? 'bg-white' : 'bg-amber-50/50'
+                          }`}
+                        >
+                          <span
+                            className={`mt-1 size-2 shrink-0 rounded-full ${
+                              item.active ? 'bg-rose-500' : 'bg-slate-300'
+                            }`}
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="flex items-center gap-2">
+                              <span className="text-[11px] font-semibold text-slate-900">
+                                {NOTIFICATION_LABELS[item.type] || item.type}
+                              </span>
+                              {!item.read && (
+                                <span className="rounded-full bg-rose-100 px-1.5 py-0.5 text-[9px] font-semibold text-rose-700">
+                                  Mới
+                                </span>
+                              )}
+                              {!item.active && (
+                                <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] text-slate-500">
+                                  Đã hết
+                                </span>
+                              )}
+                            </span>
+                            <span className="mt-1 block text-[11px] leading-relaxed text-slate-700">
+                              {item.message}
+                            </span>
+                            <span className="mt-1 block text-[10px] text-slate-400">
+                              {item.deviceId} · {new Date(item.createdAt).toLocaleString('vi-VN')}
+                            </span>
+                          </span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
             <Button
               variant="ghost"
               size="icon"
@@ -3003,7 +3212,7 @@ export default function Page() {
                 users={usersList}
                 loading={usersLoading}
                 currentUserId={user?.id || user?._id}
-                isAdmin={Boolean(user && (user.role === 'admin' || user.username?.toLowerCase() === 'admin'))}
+                isAdmin={Boolean(user && user.role === 'admin')}
                 onRefresh={fetchUsers}
                 onTogglePumpPermission={handleToggleUserPumpPermission}
                 patchingUserId={patchingUserId}
@@ -3023,7 +3232,7 @@ export default function Page() {
                   <div>
                     <Label>Vai trò hệ thống</Label>
                     <div className="mt-1 flex items-center gap-2">
-                      {user && (user.role === 'admin' || user.username?.toLowerCase() === 'admin') ? (
+                      {user && user.role === 'admin' ? (
                         <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-300 px-2.5 py-1 rounded-md">
                           Quản trị viên (Admin)
                         </span>

@@ -6,8 +6,8 @@ const { authenticateToken, requireAdmin } = require('../middleware/auth');
 router.use(authenticateToken);
 
 // Danh sách và chi tiết người dùng
-router.get('/', userController.listUsers);
-router.get('/:id', userController.getUserById);
+router.get('/', requireAdmin, userController.listUsers);
+router.get('/:id', requireAdmin, userController.getUserById);
 
 // Các thao tác phân quyền và quản lý tài khoản: Chỉ quản trị viên (Admin) mới có quyền
 router.patch('/:id', requireAdmin, userController.patchUser);

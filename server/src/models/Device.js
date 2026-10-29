@@ -11,6 +11,7 @@ const deviceSchema = new Schema(
     assetId: { type: Schema.Types.ObjectId, ref: 'Asset', default: null, index: true },
     lastSeenAt: { type: Date, default: null },
     pumpState: { type: String, enum: ['ON', 'OFF'], default: 'OFF' },
+    lastAutoOffAt: { type: Date, default: null },
   },
   { timestamps: true, toJSON: { virtuals: true } }
 );

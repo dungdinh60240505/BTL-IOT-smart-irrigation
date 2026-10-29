@@ -1,10 +1,16 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const config = require('./config');
 const { authenticateToken } = require('./middleware/auth');
 
 const app = express();
-app.use(cors());
+if (config.corsOrigin) {
+  app.use(cors({
+    origin: config.corsOrigin.split(',').map((origin) => origin.trim()).filter(Boolean),
+    credentials: true,
+  }));
+}
 app.use(express.json());
 
 // Express 4 khong tu bat loi async -> boc lai cho gon.
@@ -32,6 +38,7 @@ app.use('/api/auth', wrap(require('./routes/auth')));
 app.use('/api/users', wrap(require('./routes/user')));
 app.use('/api/assets', wrap(require('./routes/assets')));
 app.use('/api/devices', wrap(require('./routes/devices')));
+app.use('/api/notifications', wrap(require('./routes/notifications')));
 
 app.use((err, req, res, next) => {
   if (err.name === 'CastError') return res.status(400).json({ error: 'id khong hop le' });

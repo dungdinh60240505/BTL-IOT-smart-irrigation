@@ -21,6 +21,9 @@ async function listDevices(req, res) {
 async function upsertDevice(req, res) {
 	const { id, name, type, assetId, ...attributes } = req.body;
 	if (!id) return res.status(400).json({ error: 'Thieu id (device_id dung trong MQTT topic)' });
+	if (Object.keys(attributes).length && req.user?.role !== 'admin') {
+		return res.status(403).json({ error: 'Chi admin duoc sua cau hinh thiet bi' });
+	}
 	if (name !== undefined && (typeof name !== 'string' || !name.trim())) return res.status(400).json({ error: 'name khong duoc de trong' });
 	const device = await Device.findByIdAndUpdate(
 		id,
@@ -42,6 +45,9 @@ async function updateDeviceAttributes(deviceId, values) {
 
 async function updateDevice(req, res) {
 	const { name, type, assetId, ...attributes } = req.body;
+	if (Object.keys(attributes).length && req.user?.role !== 'admin') {
+		return res.status(403).json({ error: 'Chi admin duoc sua cau hinh thiet bi' });
+	}
 	const updates = {};
 	if (name !== undefined) {
 		if (typeof name !== 'string' || !name.trim()) return res.status(400).json({ error: 'name khong duoc de trong' });

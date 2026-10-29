@@ -8,7 +8,6 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
     <style>
         /* ============================================
            AgroPulse Design System — Light Mode
@@ -280,6 +279,43 @@
             border-radius: 50%;
             background: var(--error);
             border: 2px solid var(--surface);
+        }
+
+        .notification-menu { position: relative; }
+        .notification-dropdown {
+            position: absolute;
+            top: calc(100% + 10px);
+            right: 0;
+            z-index: 35;
+            width: min(380px, calc(100vw - 32px));
+            max-height: min(70vh, 520px);
+            overflow: hidden;
+            border: 1px solid var(--outline-variant);
+            border-radius: var(--radius-sm);
+            background: var(--surface-container-lowest);
+            box-shadow: var(--shadow-2);
+        }
+        .notification-dropdown[hidden] { display: none; }
+        .notification-head {
+            display: flex; align-items: center; justify-content: space-between;
+            gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--outline-variant);
+        }
+        .notification-head strong { font-size: 14px; color: var(--on-surface); }
+        .notification-list { max-height: min(60vh, 440px); overflow-y: auto; }
+        .notification-item {
+            display: block; width: 100%; padding: 11px 14px; border: 0;
+            border-bottom: 1px solid var(--outline-variant); background: transparent;
+            color: var(--on-surface); font: inherit; text-align: left; cursor: pointer;
+        }
+        .notification-item:hover { background: var(--surface-container-low); }
+        .notification-item.unread { background: #fff8e8; }
+        .notification-item-title { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; }
+        .notification-item-message { margin-top: 3px; color: var(--on-surface-variant); font-size: 12px; line-height: 1.45; }
+        .notification-item-meta { margin-top: 4px; color: var(--outline); font-size: 10px; }
+        .notification-empty { padding: 28px 14px; color: var(--on-surface-variant); font-size: 12px; text-align: center; }
+        .notification-clear {
+            border: 0; background: transparent; color: var(--primary);
+            font: inherit; font-size: 11px; font-weight: 700; cursor: pointer;
         }
 
         .avatar {
@@ -1156,10 +1192,21 @@
                             <span class="track"></span>
                         </label>
                     </div>
-                    <button class="icon-btn" id="notif-btn">
-                        <span class="material-symbols-outlined">notifications</span>
-                        <span class="notification-dot" id="notif-dot"></span>
-                    </button>
+                    <div class="notification-menu">
+                        <button class="icon-btn" id="notif-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="notification-dropdown">
+                            <span class="material-symbols-outlined">notifications</span>
+                            <span class="notification-dot" id="notif-dot" style="display:none"></span>
+                        </button>
+                        <div class="notification-dropdown" id="notification-dropdown" hidden>
+                            <div class="notification-head">
+                                <strong>Thông báo</strong>
+                                <button class="notification-clear" id="notification-clear" type="button" style="display:none">Đọc tất cả</button>
+                            </div>
+                            <div class="notification-list" id="notification-list">
+                                <p class="notification-empty">Đang tải thông báo...</p>
+                            </div>
+                        </div>
+                    </div>
                     <div class="account-menu" id="account-menu">
                         <button class="avatar" id="account-menu-toggle" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="account-dropdown" title="Tài khoản">KT</button>
                         <div class="account-dropdown" id="account-dropdown" role="menu" hidden>
@@ -1638,6 +1685,90 @@
             else if (action === 'close-profile') profileDialog.close();
         });
 
+        // ========== NOTIFICATIONS ==========
+        const notifBtn = $('notif-btn');
+        const notifDropdown = $('notification-dropdown');
+        const notifList = $('notification-list');
+        const notifClear = $('notification-clear');
+        const notifLabels = {
+            SOIL_LOW: 'Độ ẩm đất thấp',
+            SOIL_HIGH: 'Độ ẩm đất cao',
+            WATER_LOW: 'Mực nước thấp',
+            WATER_HIGH: 'Mực nước cao',
+        };
+
+        function renderNotifications(items) {
+            const list = Array.isArray(items) ? items : [];
+            const unread = list.filter(item => !item.read).length;
+            $('notif-dot').style.display = unread > 0 ? 'block' : 'none';
+            notifClear.style.display = unread > 0 ? 'inline' : 'none';
+            if (!list.length) {
+                notifList.innerHTML = '<p class="notification-empty">Chưa có thông báo.<br>Hệ thống sẽ tạo thông báo khi độ ẩm đất hoặc mực nước vượt ngưỡng.</p>';
+                return;
+            }
+            notifList.innerHTML = list.map(item => `
+                <button class="notification-item ${item.read ? '' : 'unread'}" type="button" data-notification-id="${escapeHtml(item._id)}">
+                    <span class="notification-item-title">
+                        ${item.active ? '🔴' : '⚪'} ${escapeHtml(notifLabels[item.type] || item.type)}
+                        ${item.read ? '' : '<span style="color:var(--error);font-size:10px">Mới</span>'}
+                        ${item.active ? '' : '<span style="color:var(--outline);font-size:10px">Đã hết</span>'}
+                    </span>
+                    <span class="notification-item-message">${escapeHtml(item.message || '')}</span>
+                    <span class="notification-item-meta">${escapeHtml(item.deviceId || '')} · ${escapeHtml(formatDate(item.createdAt))}</span>
+                </button>
+            `).join('');
+        }
+
+        async function loadNotifications() {
+            try {
+                const items = await apiRequest('/api/notifications?limit=50');
+                renderNotifications(items);
+            } catch (error) {
+                notifList.innerHTML = `<p class="notification-empty">${escapeHtml(error.message || 'Không tải được thông báo')}</p>`;
+            }
+        }
+
+        notifBtn.addEventListener('click', async (event) => {
+            event.stopPropagation();
+            const willOpen = notifDropdown.hidden;
+            notifDropdown.hidden = !willOpen;
+            notifBtn.setAttribute('aria-expanded', String(willOpen));
+            if (willOpen) await loadNotifications();
+        });
+
+        notifList.addEventListener('click', async (event) => {
+            const button = event.target.closest('[data-notification-id]');
+            if (!button) return;
+            try {
+                await apiRequest(`/api/notifications/${encodeURIComponent(button.dataset.notificationId)}/read`, { method: 'PATCH' });
+                await loadNotifications();
+            } catch (error) {
+                console.error('Không đánh dấu được thông báo:', error);
+            }
+        });
+
+        notifClear.addEventListener('click', async (event) => {
+            event.stopPropagation();
+            try {
+                await apiRequest('/api/notifications/read-all', { method: 'PATCH' });
+                await loadNotifications();
+            } catch (error) {
+                console.error('Không đánh dấu được tất cả thông báo:', error);
+            }
+        });
+
+        document.addEventListener('click', event => {
+            if (!event.target.closest('.notification-menu')) {
+                notifDropdown.hidden = true;
+                notifBtn.setAttribute('aria-expanded', 'false');
+            }
+        });
+
+        window.addEventListener('DOMContentLoaded', () => {
+            loadNotifications();
+            window.setInterval(loadNotifications, 15000);
+        });
+
         const modeSwitch = $('mode-switch');
         const swPump = $('sw-pump');
         const swLed = $('sw-led');
@@ -1659,90 +1790,6 @@
         swPump.style.pointerEvents = 'none';
         swLed.style.pointerEvents = 'none';
         syncControlSwitches();
-
-        // ========== MQTT ==========
-        const mqtt_server = "broker.hivemq.com";
-        const mqtt_port = 8000;
-        const topic_state = "smartgarden_v1/state";
-        const topic_cmd   = "smartgarden_v1/cmd";
-
-        const clientId = "WebClient-" + Math.random().toString(16).substr(2, 8);
-        const mqttClient = new Paho.MQTT.Client(mqtt_server, mqtt_port, clientId);
-
-        mqttClient.onConnectionLost = onConnectionLost;
-        mqttClient.onMessageArrived = onMessageArrived;
-
-        mqttClient.connect({
-            onSuccess: onConnect,
-            onFailure: function (e) {
-                console.log(e);
-                $('sidebar-status').textContent = 'Disconnected';
-                $('sidebar-status').style.color = 'var(--error)';
-                if($('footer-ws-dot')) {
-                    $('footer-ws-dot').className = 'status-dot offline';
-                    $('footer-ws-text').textContent = 'Lỗi kết nối MQTT';
-                }
-            }
-        });
-
-        function onConnect() {
-            console.log("MQTT Connected");
-            $('sidebar-status').textContent = 'Connected (MQTT)';
-            $('sidebar-status').style.color = 'var(--primary)';
-            if($('footer-ws-dot')) {
-                $('footer-ws-dot').className = 'status-dot online';
-                $('footer-ws-text').textContent = 'Kết nối qua Cloud (Chuẩn IoT)';
-            }
-            mqttClient.subscribe(topic_state);
-        }
-
-        function onConnectionLost(responseObject) {
-            if (responseObject.errorCode !== 0) {
-                console.log("onConnectionLost:" + responseObject.errorMessage);
-            }
-            $('sidebar-status').textContent = 'Disconnected';
-            $('sidebar-status').style.color = 'var(--error)';
-            if($('footer-ws-dot')) {
-                $('footer-ws-dot').className = 'status-dot offline';
-                $('footer-ws-text').textContent = 'Mất kết nối MQTT';
-            }
-        }
-
-        function onMessageArrived(message) {
-            try {
-                if (message.destinationName === topic_state) {
-                    const data = JSON.parse(message.payloadString);
-                    if(data.type === 'state') {
-                        updateUI(data);
-                    }
-                }
-            } catch (e) {
-                console.error(e);
-            }
-        }
-
-        function sendCommand(cmd, value) {
-            const payload = JSON.stringify({ cmd, value });
-            if (!mqttClient.isConnected()) {
-                const warning = `[mqtt] khong gui duoc lenh den ${topic_cmd}: ${payload}; client chua ket noi`;
-                console.warn(warning);
-                addLog(`Không gửi được MQTT ${cmd}: thiết bị điều khiển chưa kết nối.`, 'warning');
-                return false;
-            }
-
-            try {
-                const message = new Paho.MQTT.Message(payload);
-                message.destinationName = topic_cmd;
-                mqttClient.send(message);
-                console.info(`[mqtt] da gui lenh den ${topic_cmd}: ${payload}`);
-                addLog(`Đã gửi MQTT ${cmd}: ${value}.`, 'success');
-                return true;
-            } catch (error) {
-                console.error(`[mqtt] loi gui lenh den ${topic_cmd}: ${payload}`, error);
-                addLog(`Lỗi gửi MQTT ${cmd}: ${error.message || 'không rõ nguyên nhân'}.`, 'warning');
-                return false;
-            }
-        }
 
         async function sendLampCommand(isOn) {
             try {
@@ -1790,7 +1837,7 @@
                 swLed.style.pointerEvents = 'none';
             }
             syncControlSwitches();
-            sendCommand('auto', isAutoMode);
+            addLog(`Che do hien tai: ${isAutoMode ? 'Tu dong' : 'Thu cong'} (chi luu tren giao dien).`, 'info');
         });
 
         swPump.addEventListener('change', async () => {
@@ -1849,14 +1896,22 @@
         });
 
         // ========== SETTINGS & LOGS ==========
-        function saveSetting(type) {
+        async function saveSetting(type) {
             if (type === 'soil') {
                 const val = parseInt($('set-soil').value);
-                sendCommand("set_threshold_soil", val);
+                try {
+                    await apiRequest('/api/devices/attributes/all', {
+                        method: 'PUT',
+                        body: JSON.stringify({ safe_min_soil_humidity: val })
+                    });
+                } catch (error) {
+                    addLog("Khong luu duoc nguong am dat: " + error.message, "warning");
+                    return;
+                }
                 addLog("User thay đổi ngưỡng ẩm đất thành " + val + "%", "info");
             } else if (type === 'temp') {
                 const val = parseFloat($('set-temp').value);
-                sendCommand("set_threshold_temp", val);
+                addLog("Nguong canh bao nhiet do chi luu tren giao dien: " + val + " do C", "warning");
                 addLog("User thay đổi ngưỡng báo nhiệt thành " + val + "°C", "warning");
             }
         }
@@ -1887,6 +1942,31 @@
         let prevWaterWarning = false;
         let prevTempWarning = false;
         let isFirstUpdate = true;
+
+        function applyDashboardTelemetry(data) {
+            if (!data) return;
+            const temp = data.temperature == null ? NaN : Number(data.temperature);
+            const hum = data.humidity == null ? NaN : Number(data.humidity);
+            const soil = data.soil_humidity == null ? NaN : Number(data.soil_humidity);
+            const water = data.water_level == null ? NaN : Number(data.water_level);
+            if (Number.isFinite(temp)) {
+                $('v-temp').textContent = temp.toFixed(1) + '°C';
+                $('v-temp-sensor').textContent = temp.toFixed(1) + '°C';
+            }
+            if (Number.isFinite(hum)) {
+                $('v-hum').textContent = hum.toFixed(1) + '%';
+                $('v-hum-sensor').textContent = hum.toFixed(1) + '%';
+            }
+            if (Number.isFinite(soil)) {
+                $('v-soil').textContent = Math.round(soil);
+                $('v-soil-sensor').textContent = Math.round(soil) + '%';
+            }
+            if (Number.isFinite(water)) {
+                $('v-water-display').textContent = Math.round(water) + '%';
+                $('bar-water').style.width = Math.max(0, Math.min(100, water)) + '%';
+                $('v-tank-sensor').textContent = Math.round(water) + '%';
+            }
+        }
 
         function updateUI(data) {
             const soil = data.soil;
@@ -2036,9 +2116,7 @@
             if($('schedule-mode')) $('schedule-mode').textContent = isAutoMode ? 'Tự động' : 'Thủ công';
             syncControlSwitches();
 
-            // Notification dot
-            const hasAlert = (soil < 40 && water <= 10) || temp > 35 || water <= 10;
-            $('notif-dot').style.display = hasAlert ? 'block' : 'none';
+            // Notification dot duoc cap nhat tu API /api/notifications.
         }
 
         // ========== ASSET, DEVICE & TELEMETRY MANAGEMENT ==========
@@ -2216,6 +2294,7 @@
                 ));
                 if (requestId !== management.historyRequest) return;
                 management.telemetry = batches.flat().sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 50);
+                if (management.telemetry[0]) applyDashboardTelemetry(management.telemetry[0]);
                 renderTelemetry();
             } catch (error) {
                 if (requestId === management.historyRequest) setManagementStatus(error.message, 'error');
@@ -2257,6 +2336,7 @@
                     return;
                 }
                 if (message.type !== 'TELEMETRY' || !message.data) return;
+                applyDashboardTelemetry(message.data);
                 const selectedId = $('telemetry-device-filter').value;
                 if (selectedId && String(message.deviceId) !== selectedId) return;
                 const key = `${message.deviceId}:${message.data.timestamp}`;

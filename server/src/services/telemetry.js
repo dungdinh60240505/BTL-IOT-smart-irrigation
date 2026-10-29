@@ -3,11 +3,16 @@ const Attribute = require('../models/Attribute');
 const Telemetry = require('../models/Telemetry');
 const { broadcast } = require('../ws');
 const { onPumpState } = require('./watering');
+const { evaluateTelemetry } = require('./automation');
 
 const RANGES = {
   temperature: [-10, 60],
   humidity: [0, 100],
   soil_humidity: [0, 100],
+};
+
+const OPTIONAL_RANGES = {
+  water_level: [0, 100],
 };
 
 function normalizeTelemetryPayload(payload) {
@@ -29,6 +34,12 @@ function validateTelemetry(payload) {
   const out = {};
   for (const [field, [min, max]] of Object.entries(RANGES)) {
     const v = normalized[field];
+    if (typeof v !== 'number' || !Number.isFinite(v) || v < min || v > max) return null;
+    out[field] = v;
+  }
+  for (const [field, [min, max]] of Object.entries(OPTIONAL_RANGES)) {
+    const v = normalized[field];
+    if (v === undefined || v === null) continue;
     if (typeof v !== 'number' || !Number.isFinite(v) || v < min || v > max) return null;
     out[field] = v;
   }
@@ -54,9 +65,16 @@ async function handleTelemetry(deviceId, payload) {
   }
 
   const now = new Date();
-  await touchDevice(deviceId, now);
+  const device = await touchDevice(deviceId, now);
   const doc = await Telemetry.create({ deviceId, timestamp: now, ...values });
   console.log(`[telemetry] da luu vao MongoDB cho ${deviceId}:`, { deviceId, timestamp: doc.timestamp, ...values });
+
+  try {
+    await evaluateTelemetry(device._id, values);
+  } catch (error) {
+    console.error(`[automation] loi danh gia nguong cho ${deviceId}:`, error.message);
+  }
+
   broadcast(deviceId, 'TELEMETRY', { timestamp: doc.timestamp, ...values });
 }
 
