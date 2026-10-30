@@ -49,6 +49,28 @@ npm install
 npm start
 ```
 
+## ESP32 kết nối Mosquitto trên VPS
+
+Trong `include/config.h`:
+
+- `MQTT_HOST`: IP public hoặc domain của VPS (không dùng `localhost`).
+- `MQTT_PORT`: `1883` nếu dùng TCP thường, `8883` nếu bật TLS.
+- `MQTT_USER` / `MQTT_PASSWORD`: trùng user thiết bị trong Mosquitto.
+- `DEVICE_ID`: phải trùng `MQTT_DEVICE_USER` (ví dụ `esp32_01`) để ACL cho phép
+  đúng topic `dt/telemetry/esp32_01`, `dt/attributes/esp32_01`,
+  `dt/command/esp32_01`.
+- Nếu dùng TLS, đặt `MQTT_USE_TLS 1`, `MQTT_PORT 8883` và điền
+  `MQTT_CA_CERT`; không nên chạy MQTT không TLS trên Internet.
+
+VPS cần mở firewall đúng cổng MQTT (`1883` hoặc `8883`). Nếu chạy Mosquitto
+bằng Docker, dùng `docker compose up -d mosquitto` và cấu hình
+`MQTT_DEVICE_USER`/`MQTT_DEVICE_PASSWORD` trong `.env`.
+
+Nếu chạy Mosquitto trực tiếp trên VPS, tham khảo `mosquitto/mosquitto.vps.conf`.
+Copy ACL vào `/etc/mosquitto/acl`, tạo user bằng `mosquitto_passwd`, rồi trỏ
+`Mosquitto` tới file cấu hình đó. Không dùng `mosquitto.conf` của Docker cho
+chế độ chạy native vì đường dẫn `/mosquitto/data/...` khác nhau.
+
 ## Logic cảnh báo và tự động tắt bơm
 
 Khi telemetry được ghi nhận:

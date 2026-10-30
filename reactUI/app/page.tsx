@@ -1,6 +1,7 @@
 'use client'
 
 import dynamic from 'next/dynamic'
+import { useRouter } from 'next/navigation'
 import { useState, useEffect, useMemo, useRef } from 'react'
 import {
   Area,
@@ -240,16 +241,227 @@ function Metric({
   )
 }
 
-function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
+function ChartCard({
+  title,
+  action,
+  children,
+}: {
+  title: string
+  action?: React.ReactNode
+  children: React.ReactNode
+}) {
   return (
     <Card className="border-emerald-100/90 bg-white/95 shadow-xs">
-      <CardHeader className="pb-1">
+      <CardHeader className="flex flex-row items-center justify-between gap-2 pb-1">
         <CardTitle className="text-sm text-slate-900">{title}</CardTitle>
+        {action}
       </CardHeader>
       <CardContent>
         <div className="h-[220px] w-full">{children}</div>
       </CardContent>
     </Card>
+  )
+}
+
+type ChartDomain = [number, number]
+
+function ChartZoomAction({ onReset }: { onReset: () => void }) {
+  return (
+    <div className="flex shrink-0 items-center gap-1.5 text-[10px] text-slate-400">
+      <span className="hidden xl:inline">Cuộn để zoom dọc</span>
+      <button
+        type="button"
+        onClick={onReset}
+        className="rounded px-1.5 py-0.5 font-medium text-emerald-700 hover:bg-emerald-50"
+      >
+        Reset
+      </button>
+    </div>
+  )
+}
+
+function useChartWheelZoom(
+  onZoom: (factor: number, anchorRatio: number) => void,
+) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const onZoomRef = useRef(onZoom)
+
+  useEffect(() => {
+    onZoomRef.current = onZoom
+  }, [onZoom])
+
+  useEffect(() => {
+    const element = containerRef.current
+    if (!element) return
+
+    const handleWheel = (event: WheelEvent) => {
+      event.preventDefault()
+      event.stopPropagation()
+      const rect = element.getBoundingClientRect()
+      const anchorRatio = Math.min(
+        Math.max((event.clientY - rect.top) / rect.height, 0),
+        1,
+      )
+      onZoomRef.current(event.deltaY > 0 ? 1.15 : 0.87, anchorRatio)
+    }
+
+    element.addEventListener('wheel', handleWheel, { passive: false })
+    return () => element.removeEventListener('wheel', handleWheel)
+  }, [])
+
+  return containerRef
+}
+
+function zoomChartDomain(
+  domain: ChartDomain,
+  factor: number,
+  anchorRatio: number,
+  absoluteMin: number,
+  absoluteMax: number,
+  minSpan: number,
+): ChartDomain {
+  const [min, max] = domain
+  const span = Math.max(max - min, 0.001)
+  const nextSpan = Math.min(
+    Math.max(span * factor, minSpan),
+    absoluteMax - absoluteMin,
+  )
+  const anchor = max - anchorRatio * span
+  let nextMin = anchor - (1 - anchorRatio) * nextSpan
+  let nextMax = anchor + anchorRatio * nextSpan
+
+  if (nextMin < absoluteMin) {
+    nextMax += absoluteMin - nextMin
+    nextMin = absoluteMin
+  }
+  if (nextMax > absoluteMax) {
+    nextMin -= nextMax - absoluteMax
+    nextMax = absoluteMax
+  }
+
+  return [
+    Math.max(absoluteMin, nextMin),
+    Math.min(absoluteMax, nextMax),
+  ]
+}
+
+function TemperatureHumidityChart({ data }: { data: any[] }) {
+  const [temperatureDomain, setTemperatureDomain] =
+    useState<ChartDomain>([10, 45])
+  const [humidityDomain, setHumidityDomain] =
+    useState<ChartDomain>([20, 100])
+  const reset = () => {
+    setTemperatureDomain([10, 45])
+    setHumidityDomain([20, 100])
+  }
+  const chartRef = useChartWheelZoom((factor, anchorRatio) => {
+    setTemperatureDomain((current) =>
+      zoomChartDomain(current, factor, anchorRatio, 0, 60, 2),
+    )
+    setHumidityDomain((current) =>
+      zoomChartDomain(current, factor, anchorRatio, 0, 100, 5),
+    )
+  })
+
+  return (
+    <ChartCard
+      title="Nhiệt độ & độ ẩm"
+      action={<ChartZoomAction onReset={reset} />}
+    >
+      <div
+        ref={chartRef}
+        className="h-full w-full cursor-ns-resize"
+        onDoubleClick={reset}
+        title="Cuộn chuột để thu phóng trục Y"
+      >
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart
+            data={
+              data.length
+                ? data
+                : [{ time: 'N/A', temp: 25, humidity: 60 }]
+            }
+          >
+            <CartesianGrid stroke="#e2e8f0" vertical={false} />
+            <XAxis dataKey="time" tick={{ fontSize: 10 }} />
+            <YAxis
+              yAxisId="temp"
+              tick={{ fontSize: 10 }}
+              domain={temperatureDomain}
+            />
+            <YAxis
+              yAxisId="humidity"
+              orientation="right"
+              tick={{ fontSize: 10 }}
+              domain={humidityDomain}
+            />
+            <Tooltip />
+            <Line
+              yAxisId="temp"
+              type="monotone"
+              dataKey="temp"
+              stroke="#f59e0b"
+              strokeWidth={2}
+              dot={false}
+              name="Nhiệt độ (°C)"
+            />
+            <Line
+              yAxisId="humidity"
+              type="monotone"
+              dataKey="humidity"
+              stroke="#0891b2"
+              strokeWidth={2}
+              dot={false}
+              name="Độ ẩm không khí (%)"
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </ChartCard>
+  )
+}
+
+function SoilHumidityChart({ data }: { data: any[] }) {
+  const [soilDomain, setSoilDomain] = useState<ChartDomain>([0, 100])
+  const reset = () => setSoilDomain([0, 100])
+  const chartRef = useChartWheelZoom((factor, anchorRatio) => {
+    setSoilDomain((current) =>
+      zoomChartDomain(current, factor, anchorRatio, 0, 100, 5),
+    )
+  })
+
+  return (
+    <ChartCard
+      title="Độ ẩm đất"
+      action={<ChartZoomAction onReset={reset} />}
+    >
+      <div
+        ref={chartRef}
+        className="h-full w-full cursor-ns-resize"
+        onDoubleClick={reset}
+        title="Cuộn chuột để thu phóng trục Y"
+      >
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart
+            data={
+              data.length ? data : [{ time: 'N/A', soil: 60 }]
+            }
+          >
+            <CartesianGrid stroke="#e2e8f0" vertical={false} />
+            <XAxis dataKey="time" tick={{ fontSize: 10 }} />
+            <YAxis domain={soilDomain} tick={{ fontSize: 10 }} />
+            <Tooltip />
+            <Area
+              type="monotone"
+              dataKey="soil"
+              stroke="#0891b2"
+              fill="#cffafe"
+              name="Độ ẩm đất (%)"
+            />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+    </ChartCard>
   )
 }
 
@@ -1206,109 +1418,6 @@ function UsersTable({
   )
 }
 
-function AuthScreen({
-  onClose,
-  onSuccess,
-}: {
-  onClose: () => void
-  onSuccess: (user: any) => void
-}) {
-  const [register, setRegister] = useState(false)
-  const [username, setUsername] = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError('')
-    setSubmitting(true)
-    try {
-      const endpoint = register ? '/api/auth/register' : '/api/auth/login'
-      const res = await apiRequest(endpoint, {
-        method: 'POST',
-        body: JSON.stringify({ username, password }),
-      })
-      if (res.token) {
-        localStorage.setItem('auth_token', res.token)
-      }
-      onSuccess(res.user)
-      onClose()
-    } catch (err: any) {
-      setError(err.message || 'Lỗi xác thực')
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  return (
-    <div className="grid min-h-screen place-items-center bg-slate-50 p-6">
-      <Card className="w-full max-w-md border-slate-200 bg-white shadow-xl">
-        <CardHeader>
-          <div className="mb-2 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Droplets className="size-5 text-cyan-600" />
-              <span className="font-semibold">AquaSense</span>
-            </div>
-            <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close">
-              <X />
-            </Button>
-          </div>
-          <CardTitle>{register ? 'Đăng ký tài khoản' : 'Đăng nhập hệ thống'}</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            {register ? 'Thiết lập tài khoản quản lý tưới nước thông minh.' : 'Đăng nhập vào bảng điều khiển vườn.'}
-          </p>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            {error && (
-              <div className="p-2 text-xs text-red-600 bg-red-50 rounded border border-red-200">
-                {error}
-              </div>
-            )}
-            <div>
-              <Label htmlFor="username">Tên người dùng (Username)</Label>
-              <Input
-                id="username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="vd: admin"
-                className="text-black"
-                required
-              />
-            </div>
-            <div>
-              <Label htmlFor="password">Mật khẩu</Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                className="text-black"
-                required
-              />
-            </div>
-            <Button disabled={submitting} type="submit" className="w-full bg-emerald-600 text-white hover:bg-emerald-700">
-              {submitting ? 'Đang xử lý...' : register ? 'Đăng ký' : 'Đăng nhập'}
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => {
-                setRegister(!register)
-                setError('')
-              }}
-            >
-              {register ? 'Đã có tài khoản? Đăng nhập' : 'Chưa có tài khoản? Đăng ký ngay'}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
-    </div>
-  )
-}
-
 function AssetTypeSelect({
   id,
   value,
@@ -1818,10 +1927,11 @@ function DetailModal({
 }
 
 export default function Page() {
+  const router = useRouter()
   const [view, setView] = useState<View>('dashboard')
   const [open, setOpen] = useState(true)
   const [pumpOn, setPumpOn] = useState(false)
-  const [auth, setAuth] = useState(false)
+  const [authChecked, setAuthChecked] = useState(false)
   const [addModalKind, setAddModalKind] = useState<'assets' | 'sensors' | null>(null)
   const [detailModalData, setDetailModalData] = useState<{
     data: any
@@ -1966,6 +2076,8 @@ export default function Page() {
   }
 
   const [telemetryHistory, setTelemetryHistory] = useState<any[]>([])
+  const [telemetryRecordLimit, setTelemetryRecordLimit] = useState(100)
+  const telemetryRecordLimitRef = useRef(100)
   const [loading, setLoading] = useState(false)
   const [latestTelemetry, setLatestTelemetry] = useState<{
     temperature: number | null
@@ -1978,6 +2090,36 @@ export default function Page() {
     soil_humidity: null,
     water_level: null,
   })
+
+  useEffect(() => {
+    let cancelled = false
+
+    const checkAuthentication = async () => {
+      try {
+        const response = await apiRequest<{ user?: any }>(
+          '/api/auth/me',
+        )
+        if (cancelled) return
+
+        if (!response?.user) {
+          router.replace('/login')
+          return
+        }
+
+        setUser(response.user)
+        setAuthChecked(true)
+      } catch {
+        if (cancelled) return
+        localStorage.removeItem('auth_token')
+        router.replace('/login')
+      }
+    }
+
+    void checkAuthentication()
+    return () => {
+      cancelled = true
+    }
+  }, [router])
 
   // Định dạng thời gian trôi qua (hh:mm:ss hoặc mm:ss)
   const formatDuration = (totalSeconds: number): string => {
@@ -2071,7 +2213,11 @@ export default function Page() {
   }
 
   // Hàm cập nhật telemetry theo Asset (quan hệ device - asset là 1 - 1)
-  const loadTelemetryForAsset = async (targetAssetId: string, currentDevices?: DeviceItem[]) => {
+  const loadTelemetryForAsset = async (
+    targetAssetId: string,
+    currentDevices?: DeviceItem[],
+    limit = telemetryRecordLimitRef.current,
+  ) => {
     if (!targetAssetId) {
       setLatestTelemetry({
         temperature: null,
@@ -2109,7 +2255,9 @@ export default function Page() {
     }
 
     try {
-      const telem = await apiRequest<any[]>(`/api/devices/${matchedDev._id}/telemetry?limit=100`).catch(() => [])
+      const telem = await apiRequest<any[]>(
+        `/api/devices/${matchedDev._id}/telemetry?limit=${limit}`,
+      ).catch(() => [])
       if (telem && telem.length > 0) {
         const latest = telem[0]
         setLatestTelemetry({
@@ -2379,23 +2527,20 @@ export default function Page() {
   }
 
   useEffect(() => {
+    if (!authChecked) return
     fetchData()
-  }, [])
-
-  useEffect(() => {
-    if (user?.id) fetchData()
-  }, [user?.id])
+  }, [authChecked])
 
   // Tự động tải danh sách người dùng mỗi khi người dùng chuyển sang tab Quản lý người dùng
   useEffect(() => {
-    if (view === 'users') {
+    if (authChecked && view === 'users') {
       fetchUsers()
     }
-  }, [view])
+  }, [authChecked, view])
 
   // Kết nối WebSocket để nhận dữ liệu Telemetry thời gian thực
   useEffect(() => {
-    if (typeof window === 'undefined') return
+    if (!authChecked || typeof window === 'undefined') return
     const token = localStorage.getItem('auth_token')
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const wsBase = process.env.NEXT_PUBLIC_WS_URL || `${wsProtocol}//${window.location.hostname}:3001/ws`
@@ -2466,7 +2611,10 @@ export default function Page() {
                 soil: msg.data.soil_humidity,
                 water: msg.data.water_level,
               }
-              setTelemetryHistory((prev) => [...prev.slice(-99), newPoint])
+              setTelemetryHistory((prev) => [
+                ...prev.slice(-(telemetryRecordLimitRef.current - 1)),
+                newPoint,
+              ])
             }
 
             // Đồng thời thêm bản tin mới vào bảng lịch sử nhận dữ liệu Telemetry
@@ -2528,7 +2676,7 @@ export default function Page() {
     return () => {
       if (ws) ws.close()
     }
-  }, [devices, user?.id])
+  }, [authChecked, devices, user?.id])
 
   // Điều khiển máy bơm
   const handleTogglePump = async (checked: boolean) => {
@@ -2606,14 +2754,17 @@ export default function Page() {
     setUser(null)
     setNotifications([])
     setNotificationsOpen(false)
+    router.replace('/login')
   }
 
-  if (auth) {
+  if (!authChecked) {
     return (
-      <AuthScreen
-        onClose={() => setAuth(false)}
-        onSuccess={(u) => setUser(u)}
-      />
+      <div className="grid min-h-screen place-items-center bg-slate-50 p-6">
+        <div className="flex items-center gap-2 text-sm font-medium text-slate-600">
+          <RefreshCw className="size-4 animate-spin text-emerald-600" />
+          Đang kiểm tra đăng nhập...
+        </div>
+      </div>
     )
   }
 
@@ -2671,7 +2822,7 @@ export default function Page() {
             <Button
               variant="outline"
               className="justify-start gap-3"
-              onClick={() => setAuth(true)}
+              onClick={() => router.replace('/login')}
             >
               <LogIn />
               Đăng nhập / Đăng ký
@@ -2695,7 +2846,7 @@ export default function Page() {
                 className="relative"
                 onClick={() => {
                   if (!user) {
-                    setAuth(true)
+                    router.replace('/login')
                     return
                   }
                   setNotificationsOpen((current) => !current)
@@ -2808,7 +2959,9 @@ export default function Page() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => (user ? setView('profile') : setAuth(true))}
+              onClick={() =>
+                user ? setView('profile') : router.replace('/login')
+              }
               className="gap-2 text-black font-medium"
             >
               <UserRound className="size-4" /> {user ? user.username : 'Tài khoản'}
@@ -3015,60 +3168,41 @@ export default function Page() {
                 }
               />
 
-              <SectionHeading eyebrow="03 / Dữ liệu lịch sử đo đạc" title="Biểu đồ phân tích" />
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <SectionHeading eyebrow="03 / Dữ liệu lịch sử đo đạc" title="Biểu đồ phân tích" />
+                <div className="mb-4 flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-1.5 shadow-xs">
+                  <Label
+                    htmlFor="telemetry-record-limit"
+                    className="text-xs font-semibold text-black whitespace-nowrap"
+                  >
+                    Số bản ghi gần nhất:
+                  </Label>
+                  <select
+                    id="telemetry-record-limit"
+                    value={telemetryRecordLimit}
+                    onChange={(event) => {
+                      const next = Number(event.target.value)
+                      setTelemetryRecordLimit(next)
+                      telemetryRecordLimitRef.current = next
+                      if (selectedDashboardAssetId) {
+                        void loadTelemetryForAsset(
+                          selectedDashboardAssetId,
+                          devicesRef.current,
+                          next,
+                        )
+                      }
+                    }}
+                    className="h-8 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-black outline-none transition-colors hover:bg-slate-100 focus:border-cyan-600 focus:ring-1 focus:ring-cyan-600"
+                  >
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                    <option value={200}>200</option>
+                  </select>
+                </div>
+              </div>
               <div className="grid gap-4 xl:grid-cols-3">
-                <ChartCard title="Lịch sử nhiệt độ & độ ẩm (100 bản ghi mới nhất)">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={telemetryHistory.length ? telemetryHistory : [{ time: 'N/A', temp: 25, humidity: 60 }]}>
-                      <CartesianGrid stroke="#e2e8f0" vertical={false} />
-                      <XAxis dataKey="time" tick={{ fontSize: 10 }} />
-                      <YAxis yAxisId="temp" tick={{ fontSize: 10 }} domain={[10, 45]} />
-                      <YAxis
-                        yAxisId="humidity"
-                        orientation="right"
-                        tick={{ fontSize: 10 }}
-                        domain={[20, 100]}
-                      />
-                      <Tooltip />
-                      <Line
-                        yAxisId="temp"
-                        type="monotone"
-                        dataKey="temp"
-                        stroke="#f59e0b"
-                        strokeWidth={2}
-                        dot={false}
-                        name="Nhiệt độ (°C)"
-                      />
-                      <Line
-                        yAxisId="humidity"
-                        type="monotone"
-                        dataKey="humidity"
-                        stroke="#0891b2"
-                        strokeWidth={2}
-                        dot={false}
-                        name="Độ ẩm không khí (%)"
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </ChartCard>
-
-                <ChartCard title="Độ ẩm đất theo thời gian (100 bản ghi mới nhất)">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={telemetryHistory.length ? telemetryHistory : [{ time: 'N/A', soil: 60 }]}>
-                      <CartesianGrid stroke="#e2e8f0" vertical={false} />
-                      <XAxis dataKey="time" tick={{ fontSize: 10 }} />
-                      <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} />
-                      <Tooltip />
-                      <Area
-                        type="monotone"
-                        dataKey="soil"
-                        stroke="#0891b2"
-                        fill="#cffafe"
-                        name="Độ ẩm đất (%)"
-                      />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </ChartCard>
+                <TemperatureHumidityChart data={telemetryHistory} />
+                <SoilHumidityChart data={telemetryHistory} />
 
                 <ChartCard title="Mực nước bể chứa">
                   <ResponsiveContainer width="100%" height="100%">

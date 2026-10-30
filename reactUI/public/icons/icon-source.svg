@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#10b981"/>
+      <stop offset="1" stop-color="#047857"/>
+    </linearGradient>
+    <linearGradient id="drop" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#d1fae5"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <circle cx="400" cy="110" r="150" fill="#ffffff" opacity="0.08"/>
+  <!-- Water drop -->
+  <path d="M256 104 C256 104 148 222 148 302 C148 362 196 410 256 410 C316 410 364 362 364 302 C364 222 256 104 256 104 Z" fill="url(#drop)"/>
+  <!-- Leaf inside the drop -->
+  <path d="M206 352 C206 282 252 246 314 244 C314 312 276 352 206 352 Z" fill="#059669"/>
+  <path d="M214 344 C240 310 268 288 300 258" stroke="#d1fae5" stroke-width="8" stroke-linecap="round" fill="none"/>
+  <!-- Shine -->
+  <path d="M206 262 C214 236 228 214 240 198" stroke="#ffffff" stroke-width="12" stroke-linecap="round" fill="none" opacity="0.9"/>
+</svg>

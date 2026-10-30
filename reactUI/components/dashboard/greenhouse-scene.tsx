@@ -18,7 +18,6 @@ import {
   Billboard,
   Html,
   OrbitControls,
-  RoundedBox,
   useCursor,
   useGLTF,
 } from '@react-three/drei'
@@ -467,6 +466,14 @@ function TreeStation({
         highlighted={selected || hovered}
       />
 
+      {station.pumpOn && (
+        <HealingParticles
+          soilTop={soilTop}
+          treeHeight={treeHeightForVariant(variant)}
+          reducedMotion={reducedMotion}
+        />
+      )}
+
       {station.devices.map((device, index) => {
         const deviceTelemetry = station.telemetryByDevice[device._id] ?? null
         const isSelected = device._id === selectedDeviceId
@@ -913,6 +920,112 @@ function SensorNode({
   )
 }
 
+function HealingParticles({
+  soilTop,
+  treeHeight,
+  reducedMotion,
+}: {
+  soilTop: number
+  treeHeight: number
+  reducedMotion: boolean
+}) {
+  const count = 28
+  const seeds = useMemo(
+    () =>
+      Array.from({ length: count }, (_, index) => ({
+        angle: (index / count) * Math.PI * 2 + Math.random() * 0.5,
+        radius: 0.24 + Math.random() * 0.38,
+        speed: 0.18 + Math.random() * 0.18,
+        offset: Math.random(),
+      })),
+    [],
+  )
+  const baseY = soilTop + treeHeight * 0.55
+  const topY = soilTop + treeHeight + 0.35
+
+  const geometry = useMemo(() => {
+    const next = new THREE.BufferGeometry()
+    const positions = new Float32Array(count * 3)
+
+    seeds.forEach((seed, index) => {
+      const y = baseY + seed.offset * (topY - baseY)
+      positions[index * 3] = Math.cos(seed.angle) * seed.radius
+      positions[index * 3 + 1] = y
+      positions[index * 3 + 2] = Math.sin(seed.angle) * seed.radius
+    })
+
+    next.setAttribute(
+      'position',
+      new THREE.BufferAttribute(positions, 3),
+    )
+    return next
+  }, [baseY, count, seeds, topY])
+
+  const texture = useMemo(() => {
+    if (typeof document === 'undefined') return null
+
+    const canvas = document.createElement('canvas')
+    canvas.width = 64
+    canvas.height = 64
+    const context = canvas.getContext('2d')
+    if (!context) return null
+
+    const gradient = context.createRadialGradient(32, 32, 0, 32, 32, 32)
+    gradient.addColorStop(0, 'rgba(255,255,255,1)')
+    gradient.addColorStop(0.35, 'rgba(255,255,255,0.8)')
+    gradient.addColorStop(1, 'rgba(255,255,255,0)')
+    context.fillStyle = gradient
+    context.fillRect(0, 0, 64, 64)
+
+    const next = new THREE.CanvasTexture(canvas)
+    next.colorSpace = THREE.SRGBColorSpace
+    return next
+  }, [])
+
+  useEffect(() => () => geometry.dispose(), [geometry])
+  useEffect(() => () => texture?.dispose(), [texture])
+
+  useFrame((state) => {
+    if (reducedMotion) return
+
+    const attribute = geometry.getAttribute(
+      'position',
+    ) as THREE.BufferAttribute
+    const positions = attribute.array as Float32Array
+    const time = state.clock.elapsedTime
+
+    seeds.forEach((seed, index) => {
+      const life = (time * seed.speed + seed.offset) % 1
+      const angle = seed.angle + time * 0.22
+      const radius = seed.radius * (0.8 + life * 0.35)
+
+      positions[index * 3] = Math.cos(angle) * radius
+      positions[index * 3 + 1] = baseY + life * (topY - baseY)
+      positions[index * 3 + 2] = Math.sin(angle) * radius
+    })
+
+    attribute.needsUpdate = true
+  })
+
+  return (
+    <points geometry={geometry} frustumCulled={false}>
+      <pointsMaterial
+        map={texture ?? undefined}
+        color={SCENE_COLORS.healing}
+        size={0.11}
+        sizeAttenuation
+        transparent
+        opacity={0.85}
+        alphaTest={0.01}
+        depthTest={false}
+        depthWrite={false}
+        blending={THREE.AdditiveBlending}
+        toneMapped={false}
+      />
+    </points>
+  )
+}
+
 function WateringValve({
   variant,
   pumpOn,
@@ -964,44 +1077,104 @@ function WateringValve({
         />
       </mesh>
 
-      <RoundedBox
-        args={[0.2, 0.16, 0.15]}
-        radius={0.025}
-        smoothness={2}
-        position={[0.72, 0.29, 0.38]}
-      >
+      <mesh position={[0.72, 0.3, 0.38]}>
+        <cylinderGeometry args={[0.115, 0.115, 0.14, 16]} />
+        <meshStandardMaterial
+          color={SCENE_COLORS.valveBody}
+          roughness={0.5}
+          metalness={0.3}
+        />
+      </mesh>
+      <mesh position={[0.72, 0.225, 0.38]}>
+        <cylinderGeometry args={[0.145, 0.145, 0.025, 16]} />
+        <meshStandardMaterial
+          color={SCENE_COLORS.valveFlange}
+          roughness={0.45}
+          metalness={0.35}
+        />
+      </mesh>
+      <mesh position={[0.72, 0.375, 0.38]}>
+        <cylinderGeometry args={[0.145, 0.145, 0.025, 16]} />
+        <meshStandardMaterial
+          color={SCENE_COLORS.valveFlange}
+          roughness={0.45}
+          metalness={0.35}
+        />
+      </mesh>
+      <mesh position={[0.72, 0.43, 0.38]}>
+        <cylinderGeometry args={[0.06, 0.075, 0.08, 12]} />
         <meshStandardMaterial
           color={SCENE_COLORS.valveBody}
           roughness={0.5}
           metalness={0.25}
         />
-      </RoundedBox>
+      </mesh>
+      <mesh position={[0.72, 0.5, 0.38]}>
+        <cylinderGeometry args={[0.022, 0.022, 0.1, 8]} />
+        <meshStandardMaterial
+          color={SCENE_COLORS.valveStem}
+          roughness={0.35}
+          metalness={0.6}
+        />
+      </mesh>
+
+      {[0, Math.PI / 2, Math.PI, (Math.PI * 3) / 2].map(
+        (angle) => (
+          <mesh
+            key={`valve-bolt-${angle}`}
+            position={[
+              0.72 + Math.cos(angle) * 0.105,
+              0.39,
+              0.38 + Math.sin(angle) * 0.105,
+            ]}
+          >
+            <sphereGeometry args={[0.012, 6, 6]} />
+            <meshStandardMaterial
+              color="#d1d5db"
+              roughness={0.35}
+              metalness={0.6}
+            />
+          </mesh>
+        ),
+      )}
 
       <group
-        position={[0.72, 0.395, 0.38]}
+        position={[0.72, 0.565, 0.38]}
         rotation={[0, pumpOn ? Math.PI / 2 : 0, 0]}
       >
         <mesh rotation={[Math.PI / 2, 0, 0]}>
-          <torusGeometry args={[0.075, 0.018, 8, 20]} />
+          <torusGeometry args={[0.105, 0.018, 8, 20]} />
           <meshStandardMaterial
-            color={SCENE_COLORS.valveHandle}
-            roughness={0.5}
+            color={SCENE_COLORS.valveWheel}
+            roughness={0.45}
             metalness={0.2}
           />
         </mesh>
+        {[0, (Math.PI * 2) / 3, (Math.PI * 4) / 3].map(
+          (angle) => (
+            <mesh key={`valve-spoke-${angle}`} rotation={[0, angle, 0]}>
+              <boxGeometry args={[0.19, 0.014, 0.014]} />
+              <meshStandardMaterial
+                color={SCENE_COLORS.valveWheel}
+                roughness={0.45}
+                metalness={0.2}
+              />
+            </mesh>
+          ),
+        )}
         <mesh>
-          <boxGeometry args={[0.15, 0.018, 0.018]} />
+          <cylinderGeometry args={[0.028, 0.028, 0.035, 10]} />
           <meshStandardMaterial
             color={SCENE_COLORS.valveHandle}
-            roughness={0.5}
-            metalness={0.2}
+            roughness={0.4}
+            metalness={0.3}
           />
         </mesh>
       </group>
 
       {selected && (
         <Html
-          position={[0.72, 1.16, 0.38]}
+          position={[0.72, 0.78, 0.38]}
           center
           distanceFactor={8}
           zIndexRange={[30, 0]}

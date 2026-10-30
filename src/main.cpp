@@ -8,35 +8,28 @@
 #include <PubSubClient.h>
 #include <WiFi.h>
 
+#define WIFI_SSID "DD"
+#define WIFI_PASSWORD "1357924680"
 
-#include "config.h"
+// IP cua may dang chay MQTT broker (cung mang LAN voi ESP32), KHONG dung
+// "localhost".
+#define MQTT_HOST "180.93.195.207"
+#define MQTT_PORT 1883
 
-#ifndef MQTT_USER
-#define MQTT_USER DEVICE_ID
-#endif
-#ifndef MQTT_PASSWORD
-#define MQTT_PASSWORD ""
-#endif
+#define DEVICE_ID "esp32_01"
+#define MQTT_USER DEVICE_ID // Username phai bang DEVICE_ID theo Mosquitto ACL
+#define MQTT_PASSWORD "12345678"
+#define FIRMWARE_VERSION "0.1.0"
 
 // -------------------- CẤU HÌNH  --------------------
 #define PIN_DHT 4      // DHT11 nối chân GPIO4
 #define DHT_TYPE DHT11 // chuyen sang DHT11 khi nap code, simulator DHT22
-#define PIN_LED 2      // LED test, dùng chân GPIO2
+// #define PIN_LED 2      // LED test, dùng chân GPIO2
 
 #define PIN_SOIL 32  // chân cắm độ ẩm đất D32
 #define PIN_RELAY 5  // IN relay 5V nối GPIO5
 #define RELAY_ON LOW // Relay 1 kênh thường kích mức LOW
 #define RELAY_OFF HIGH
-
-#ifndef PIN_WATER_LEVEL
-#define PIN_WATER_LEVEL -1
-#endif
-#ifndef WATER_ADC_EMPTY
-#define WATER_ADC_EMPTY 0
-#endif
-#ifndef WATER_ADC_FULL
-#define WATER_ADC_FULL 4095
-#endif
 
 DHT dht(PIN_DHT, DHT_TYPE);
 WiFiClient espClient;
@@ -44,13 +37,13 @@ PubSubClient mqttClient(espClient);
 
 void turnLampOn() {
   digitalWrite(PIN_RELAY, RELAY_ON);
-  digitalWrite(PIN_LED, HIGH);
+
   Serial.println("Relay ON: den bat");
 }
 
 void turnLampOff() {
   digitalWrite(PIN_RELAY, RELAY_OFF);
-  digitalWrite(PIN_LED, LOW);
+
   Serial.println("Relay OFF: den tat");
 }
 
@@ -77,7 +70,7 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
   const char *state = doc["state"] | "";
   if ((strcmp(action, "WATER") != 0 && strcmp(action, "LAMP") != 0) ||
       (strcmp(state, "ON") != 0 && strcmp(state, "OFF") != 0)) {
-    Serial.printf("MQTT command khong hop le: %.*s\n", length, payload);
+    Serial.printf("MQTT command khong hop le: %s\n", payload);
     return;
   }
 
@@ -127,11 +120,9 @@ void connectWiFi() {
 void connectMqtt() {
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
 
-  int attempts = 0;
-  while (!mqttClient.connected() && attempts < 5) {
-    attempts++;
+  while (!mqttClient.connected()) {
     Serial.print("Connecting to MQTT...");
-    String clientId = "esp32-" + String(random(0xFFFF), HEX);
+    String clientId = "esp32-" + String(DEVICE_ID);
 
     if (mqttClient.connect(clientId.c_str(), MQTT_USER, MQTT_PASSWORD)) {
       Serial.println(" connected");
@@ -144,8 +135,8 @@ void connectMqtt() {
     } else {
       Serial.print(" failed, rc=");
       Serial.print(mqttClient.state());
-      Serial.println(" retry in 1s");
-      delay(1000);
+      Serial.println(" retry in 2s");
+      delay(2000);
     }
   }
 }
@@ -165,10 +156,6 @@ void publishTelemetry() {
   doc["temperature"] = temperature;
   doc["humidity"] = humidity;
   doc["soil"] = soilPercent;
-  if (PIN_WATER_LEVEL >= 0) {
-    int waterPercent = map(analogRead(PIN_WATER_LEVEL), WATER_ADC_EMPTY, WATER_ADC_FULL, 0, 100);
-    doc["water_level"] = constrain(waterPercent, 0, 100);
-  }
 
   String payload;
   serializeJson(doc, payload);
@@ -181,10 +168,6 @@ void publishTelemetry() {
 
 const int unusedPins[] = {12, 13, 14, 25, 26, 27, 33};
 const int numUnusedPins = sizeof(unusedPins) / sizeof(unusedPins[0]);
-
-void turnOnLump() { digitalWrite(PIN_LED, HIGH); }
-
-void turnOffLump() { digitalWrite(PIN_LED, LOW); }
 
 void setup() {
   Serial.begin(115200);
@@ -222,23 +205,4 @@ void loop() {
   delay(5000); // Đọc mỗi 2 giây
 
   publishTelemetry();
-
-  // Ví dụ xử lý dữ liệu:
-  // if (temperature > 35.0)
-  // {
-  //   Serial.println("Nhiet do cao");
-  // }
-  // if (humidity < 40.0)
-  // {
-  //   Serial.println("Khong khi qua khan");
-  // }
 }
-
-// ---------------------------------------------------------
-// Các phần dưới đây đã được bỏ qua để tập trung vào DHT11:
-// - WiFi
-// - MQTT
-// - LED cảnh báo
-// - Cảm biến độ ẩm đất
-// - Relay / bơm nước
-// ---------------------------------------------------------

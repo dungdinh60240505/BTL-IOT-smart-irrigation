@@ -4,11 +4,17 @@
 #define WIFI_SSID "ten-wifi"
 #define WIFI_PASSWORD "mat-khau-wifi"
 
-// IP cua may dang chay MQTT broker (cung mang LAN voi ESP32), KHONG dung "localhost".
-#define MQTT_HOST "192.168.1.10"
+// IP public hoac domain cua VPS dang chay Mosquitto.
+// KHONG dung "localhost" tren ESP32.
+#define MQTT_HOST "YOUR_VPS_PUBLIC_IP"
 #define MQTT_PORT 1883
 #define MQTT_USER "esp32_01"
 #define MQTT_PASSWORD "change-mqtt-device-password"
+
+// Bat TLS neu Mosquitto tren VPS dung listener 8883.
+// Voi TLS nen dung domain trung certificate; IP thuan co the phai setInsecure.
+#define MQTT_USE_TLS 0
+#define MQTT_CA_CERT ""
 
 #define DEVICE_ID "esp32_01"
 #define FIRMWARE_VERSION "0.1.0"
