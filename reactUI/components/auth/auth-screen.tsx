@@ -23,12 +23,19 @@ export function AuthScreen({
   const [register, setRegister] = useState(false)
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
     setError('')
+
+    if (register && password !== confirmPassword) {
+      setError('Mật khẩu nhập lại không khớp.')
+      return
+    }
+
     setSubmitting(true)
 
     try {
@@ -122,6 +129,25 @@ export function AuthScreen({
                 required
               />
             </div>
+            {register && (
+              <div>
+                <Label htmlFor="confirm-password">
+                  Nhập lại mật khẩu
+                </Label>
+                <Input
+                  id="confirm-password"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(event) =>
+                    setConfirmPassword(event.target.value)
+                  }
+                  placeholder="••••••••"
+                  className="text-black"
+                  autoComplete="new-password"
+                  required
+                />
+              </div>
+            )}
             <Button
               disabled={submitting}
               type="submit"
@@ -139,6 +165,7 @@ export function AuthScreen({
               onClick={() => {
                 setRegister((current) => !current)
                 setError('')
+                setConfirmPassword('')
               }}
             >
               {register

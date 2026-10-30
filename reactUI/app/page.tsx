@@ -741,10 +741,10 @@ function DataTable({
                   displayedDevices.map((s) => (
                     <TableRow
                       key={s._id}
-                      onClick={() => onRowClick?.(s, `Chi tiết Thiết bị: ${s.name || s._id}`)}
+                      onClick={() => onRowClick?.(s, `Chi tiết Thiết bị: ${s.name || 'Thiết bị chưa đặt tên'}`)}
                     >
                       <TableCell className="font-mono text-xs font-medium text-black">
-                        {s.name || s._id}
+                        {s.name || 'Thiết bị chưa đặt tên'}
                       </TableCell>
                       <TableCell className="text-xs text-black">{s.type || 'Sensor Node'}</TableCell>
                       <TableCell>
@@ -900,7 +900,7 @@ function TelemetryTable({
               <option value="all">-- Tất cả thiết bị --</option>
               {devices.map((d) => (
                 <option key={d._id} value={d._id}>
-                  {d.name || d._id} ({d.type || 'Thiết bị'})
+                  {d.name || 'Thiết bị chưa đặt tên'} ({d.type || 'Thiết bị'})
                 </option>
               ))}
             </select>
@@ -1274,7 +1274,6 @@ function UsersTable({
                                   </Badge>
                                 )}
                               </div>
-                              <p className="font-mono text-[10px] text-slate-400">{u?._id || '—'}</p>
                             </div>
                           </div>
                         </TableCell>
@@ -1645,7 +1644,7 @@ const FIELD_LABELS: Record<string, string> = {
   water_level: 'Mực nước bể (%)',
 }
 
-const IGNORED_FIELDS = new Set(['__v', 'id', 'updatedAt'])
+const IGNORED_FIELDS = new Set(['_id', '__v', 'id', 'updatedAt'])
 
 function DetailModal({
   title,
@@ -1682,7 +1681,7 @@ function DetailModal({
     if (key === 'type' && isAsset) return assetTypeLabel(val)
     if (key === 'assetId') {
       const ast = assets.find((a) => a._id === val)
-      return ast ? `${ast.name} (${val})` : String(val)
+      return ast ? ast.name : 'Không xác định'
     }
     if (typeof val === 'boolean') return val ? 'Bật' : 'Tắt'
     if (key === 'temperature' && typeof val === 'number') return `${val} °C`
@@ -1746,7 +1745,6 @@ function DetailModal({
   // Nếu là thiết bị hoặc asset thì không hiển thị _id; device không lặp lại createdAt, lastSeenAt, online ở danh sách
   const ignoredForList = new Set([
     ...IGNORED_FIELDS,
-    ...(canEdit ? ['_id'] : []),
     ...(isDevice ? ['createdAt', 'lastSeenAt', 'online'] : []),
   ])
   const entries = Object.entries(data).filter(([key]) => !ignoredForList.has(key))
@@ -1873,7 +1871,6 @@ function DetailModal({
                     <span className="font-semibold text-slate-900">
                       {FIELD_LABELS[key] || key}
                     </span>
-                    <span className="font-mono text-[10px] text-slate-400">{key}</span>
                   </div>
                   <span className="font-medium text-black break-all text-left sm:text-right bg-slate-50 px-2.5 py-1 rounded border border-slate-200/80 max-w-full">
                     {formatValue(key, val)}
@@ -3009,7 +3006,7 @@ export default function Page() {
                         })
                         return (
                           <option key={a._id} value={a._id}>
-                            {a.name} ({a.type}) {linkedDev ? `[${linkedDev.name || linkedDev._id}]` : '[Chưa có thiết bị]'}
+                            {a.name} ({a.type}) {linkedDev ? `[${linkedDev.name || 'Thiết bị chưa đặt tên'}]` : '[Chưa có thiết bị]'}
                           </option>
                         )
                       })
