@@ -5,6 +5,7 @@ const app = require('./app');
 const User = require('./models/User');
 const { initWs } = require('./ws');
 const { initMqtt } = require('./mqtt');
+const { initDevicePresence } = require('./services/presence');
 
 async function main() {
   if (!config.jwtSecret || config.jwtSecret.length < 32 || config.jwtSecret === 'replace-with-a-long-random-secret') {
@@ -21,6 +22,7 @@ async function main() {
 
   const server = http.createServer(app);
   initWs(server);
+  await initDevicePresence();
   initMqtt();
   server.listen(config.port, () => console.log(`[http] http://localhost:${config.port}  (WebSocket: /ws)`));
 }

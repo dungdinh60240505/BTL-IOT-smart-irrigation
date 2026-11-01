@@ -137,6 +137,7 @@ export interface UserItem {
   priority?: number
   turnOnPump?: boolean
   status_online?: boolean
+  connected?: boolean
   createdAt?: string
   updatedAt?: string
 }
@@ -676,14 +677,18 @@ function DataTable({
                     <TableHead>Số cảm biến</TableHead>
                     <TableHead className="text-right">Ngày tạo</TableHead>
                   </>
+                ) : kind === 'sensors' ? (
+                  <>
+                    <TableHead>Tên thiết bị</TableHead>
+                    <TableHead>Loại thiết bị</TableHead>
+                    <TableHead>Trạng thái kết nối</TableHead>
+                    <TableHead className="text-right">Lần cuối hoạt động</TableHead>
+                  </>
                 ) : (
                   <>
-                    <TableHead>{kind === 'sensors' ? 'Tên thiết bị' : 'Thời gian bắt đầu'}</TableHead>
-                    <TableHead>{kind === 'sensors' ? 'Loại thiết bị' : 'Thời lượng tưới'}</TableHead>
-                    <TableHead>{kind === 'sensors' ? 'Trạng thái kết nối' : 'Lượng nước đã tưới'}</TableHead>
-                    <TableHead className="text-right">
-                      {kind === 'sensors' ? 'Lần cuối hoạt động' : 'Cây được tưới'}
-                    </TableHead>
+                    <TableHead>Thời gian bắt đầu</TableHead>
+                    <TableHead>Thời lượng tưới</TableHead>
+                    <TableHead className="text-right">Cây được tưới</TableHead>
                   </>
                 )}
               </TableRow>
@@ -691,7 +696,7 @@ function DataTable({
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center py-6 text-sm text-slate-500">
+                  <TableCell colSpan={kind === 'history' ? 3 : 4} className="text-center py-6 text-sm text-slate-500">
                     Đang tải dữ liệu...
                   </TableCell>
                 </TableRow>
@@ -768,7 +773,7 @@ function DataTable({
               ) : (
                 wateringEvents.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={4} className="text-center py-6 text-sm text-slate-500">
+                    <TableCell colSpan={3} className="text-center py-6 text-sm text-slate-500">
                       Chưa có lịch sử tưới nào
                     </TableCell>
                   </TableRow>
@@ -790,11 +795,6 @@ function DataTable({
                         </TableCell>
                         <TableCell className="font-mono text-xs text-black">
                           {w.durationSec !== null && w.durationSec !== undefined ? `${w.durationSec}s` : 'Đang tưới'}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="text-black border-slate-300">
-                            {w.liters !== null && w.liters !== undefined ? `${w.liters} L` : '0 L'}
-                          </Badge>
                         </TableCell>
                         <TableCell className="text-right text-xs">
                           <span className="inline-flex items-center gap-1.5 rounded-md bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-xs font-semibold text-emerald-800">
@@ -1059,8 +1059,8 @@ function UsersTable({
       }
       if (permissionFilter === 'granted' && !u.turnOnPump) return false
       if (permissionFilter === 'revoked' && u.turnOnPump) return false
-      if (statusFilter === 'online' && !u.status_online) return false
-      if (statusFilter === 'offline' && u.status_online) return false
+      if (statusFilter === 'online' && !u.connected) return false
+      if (statusFilter === 'offline' && u.connected) return false
       return true
     })
   }, [safeUsers, searchTerm, permissionFilter, statusFilter])
@@ -1075,7 +1075,7 @@ function UsersTable({
   const displayedUsers = filteredUsers.slice(startIndex, startIndex + PAGE_SIZE)
 
   const countGranted = safeUsers.filter((u) => Boolean(u?.turnOnPump)).length
-  const countOnline = safeUsers.filter((u) => Boolean(u?.status_online)).length
+  const countOnline = safeUsers.filter((u) => Boolean(u?.connected)).length
 
   return (
     <div className="space-y-4">
@@ -1280,7 +1280,7 @@ function UsersTable({
 
                         {/* Cột 2: Trạng thái Online */}
                         <TableCell>
-                          {u.status_online ? (
+                          {u.connected ? (
                             <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
                               <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
                               Trực tuyến
@@ -1661,8 +1661,12 @@ function DetailModal({
   onClose: () => void
   onUpdated?: () => void
 }) {
-  const isDevice = kind === 'sensors' || Boolean(data._id && ('pumpState' in data || 'online' in data))
-  const isAsset = kind === 'assets' || Boolean(data._id && 'name' in data && !('deviceId' in data) && !('pumpState' in data))
+  const isDevice = kind
+    ? kind === 'sensors'
+    : Boolean(data._id && ('pumpState' in data || 'online' in data))
+  const isAsset = kind
+    ? kind === 'assets'
+    : Boolean(data._id && 'name' in data && !('deviceId' in data) && !('pumpState' in data))
   const canEdit = isDevice || isAsset
 
   const [isEditing, setIsEditing] = useState(false)
@@ -1745,31 +1749,45 @@ function DetailModal({
   // Nếu là thiết bị hoặc asset thì không hiển thị _id; device không lặp lại createdAt, lastSeenAt, online ở danh sách
   const ignoredForList = new Set([
     ...IGNORED_FIELDS,
-    ...(isDevice ? ['createdAt', 'lastSeenAt', 'online'] : []),
+    ...(isDevice ? ['createdAt', 'lastSeenAt', 'online', 'lastAutoOffAt', 'attributes'] : []),
+    ...(isAsset ? ['layout'] : []),
+    ...(kind === 'history' ? ['liters'] : []),
   ])
   const entries = Object.entries(data).filter(([key]) => !ignoredForList.has(key))
 
+  // Nhãn hiển thị ở chế độ xem giống với form chỉnh sửa
+  const viewLabel = (key: string): string => {
+    if (key === 'name') return isDevice ? 'Tên thiết bị' : 'Tên cây / Khu vực'
+    if (key === 'type') return isDevice ? 'Loại thiết bị' : 'Loại cây / Mục đích'
+    if (key === 'assetId') return 'Thuộc cây / Khu vườn nào'
+    return FIELD_LABELS[key] || key
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
-      <Card className="w-full max-w-lg border-slate-200 bg-white shadow-2xl flex flex-col max-h-[88vh]">
-        <CardHeader className="border-b border-slate-100 pb-3 flex flex-col gap-2">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <CardTitle className="text-base text-slate-900 font-semibold">{title}</CardTitle>
-              {canEdit && (
-                <div className="flex items-center gap-1.5 ml-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5">
-                  <span className="text-[11px] font-medium text-black">Chỉnh sửa</span>
-                  <Switch
-                    checked={isEditing}
-                    onCheckedChange={setIsEditing}
-                    aria-label="Chế độ chỉnh sửa"
-                  />
-                </div>
-              )}
-            </div>
-            <Button variant="ghost" size="icon" onClick={onClose} aria-label="Đóng" className="size-8">
-              <X className="size-4" />
-            </Button>
+      <Card className="relative w-full max-w-lg border-slate-200 bg-white shadow-2xl flex flex-col max-h-[88vh]">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onClose}
+          aria-label="Đóng"
+          className="absolute right-2.5 top-2.5 z-10 size-8 text-slate-500 hover:text-slate-900"
+        >
+          <X className="size-4" />
+        </Button>
+        <CardHeader className="border-b border-slate-100 pb-3 pr-12 flex flex-col gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <CardTitle className="text-base text-slate-900 font-semibold">{title}</CardTitle>
+            {canEdit && (
+              <div className="flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5">
+                <span className="text-[11px] font-medium text-black">Chỉnh sửa</span>
+                <Switch
+                  checked={isEditing}
+                  onCheckedChange={setIsEditing}
+                  aria-label="Chế độ chỉnh sửa"
+                />
+              </div>
+            )}
           </div>
 
           {/* Badges trên Header Modal cho Thiết bị (online, lastSeenAt, createdAt) */}
@@ -1860,6 +1878,20 @@ function DetailModal({
                 </div>
               )}
             </form>
+          ) : canEdit ? (
+            <div className="flex flex-col gap-3.5">
+              {entries.map(([key, val]) => (
+                <div key={key}>
+                  <Label htmlFor={`view-${key}`}>{viewLabel(key)}</Label>
+                  <Input
+                    id={`view-${key}`}
+                    readOnly
+                    value={formatValue(key, val)}
+                    className="text-black mt-1 bg-slate-50 cursor-default focus-visible:ring-0"
+                  />
+                </div>
+              ))}
+            </div>
           ) : (
             <div className="flex flex-col gap-2.5">
               {entries.map(([key, val]) => (
@@ -1986,20 +2018,25 @@ export default function Page() {
   }, [devices])
 
   // Nạp dữ liệu Attribute ban đầu từ bất kỳ thiết bị nào có cấu hình
-  useEffect(() => {
-    if (devices.length === 0) return
+  // (chỉ chạy lại khi giá trị attribute thay đổi, không chạy khi trạng thái online cập nhật real-time)
+  const attributeSourceKey = useMemo(() => {
     const devWithAttr = devices.find(
       (d) => d.attributes && typeof d.attributes.safe_min_soil_humidity === 'number'
     )
     const attr = devWithAttr?.attributes
-    if (attr) {
-      if (typeof attr.safe_min_soil_humidity === 'number') setSettingSoilMin(attr.safe_min_soil_humidity)
-      if (typeof attr.safe_max_soil_humidity === 'number') setSettingSoilMax(attr.safe_max_soil_humidity)
-      if (typeof attr.safe_min_water_level === 'number') setSettingWaterMin(attr.safe_min_water_level)
-      if (typeof attr.safe_max_water_level === 'number') setSettingWaterMax(attr.safe_max_water_level)
-    }
-    setSettingsSaveMsg(null)
+    return attr
+      ? [attr.safe_min_soil_humidity, attr.safe_max_soil_humidity, attr.safe_min_water_level, attr.safe_max_water_level].join('|')
+      : ''
   }, [devices])
+
+  useEffect(() => {
+    if (!attributeSourceKey) return
+    const [soilMin, soilMax, waterMin, waterMax] = attributeSourceKey.split('|').map((v) => (v === '' ? NaN : Number(v)))
+    if (Number.isFinite(soilMin)) setSettingSoilMin(soilMin)
+    if (Number.isFinite(soilMax)) setSettingSoilMax(soilMax)
+    if (Number.isFinite(waterMin)) setSettingWaterMin(waterMin)
+    if (Number.isFinite(waterMax)) setSettingWaterMax(waterMax)
+  }, [attributeSourceKey])
 
   // Lưu cấu hình Attribute cho toàn bộ attribute/device vào DB
   const handleSaveAttributes = async () => {
@@ -2514,8 +2551,10 @@ export default function Page() {
       const me = await apiRequest('/api/auth/me').catch(() => null)
       if (me?.user) setUser(me.user)
 
-      // 6. Nạp danh sách người dùng cho tab Quản lý người dùng
-      await fetchUsers()
+      // 6. Nạp danh sách người dùng cho tab Quản lý người dùng (chỉ admin)
+      if ((me?.user ?? user)?.role === 'admin') {
+        await fetchUsers()
+      }
     } catch (err) {
       console.error('Lỗi nạp dữ liệu:', err)
     } finally {
@@ -2529,40 +2568,57 @@ export default function Page() {
   }, [authChecked])
 
   // Tự động tải danh sách người dùng mỗi khi người dùng chuyển sang tab Quản lý người dùng
+  // Chỉ admin được vào tab này; tài khoản thường bị chuyển về Dashboard
   useEffect(() => {
-    if (authChecked && view === 'users') {
-      fetchUsers()
+    if (!authChecked || view !== 'users') return
+    if (user?.role !== 'admin') {
+      setView('dashboard')
+      return
     }
-  }, [authChecked, view])
+    fetchUsers()
+  }, [authChecked, view, user?.role])
 
-  // Kết nối WebSocket để nhận dữ liệu Telemetry thời gian thực
-  useEffect(() => {
-    if (!authChecked || typeof window === 'undefined') return
-    const token = localStorage.getItem('auth_token')
-    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const wsBase = process.env.NEXT_PUBLIC_WS_URL || `${wsProtocol}//${window.location.hostname}:3001/ws`
-    const wsUrl = token
-      ? `${wsBase}${wsBase.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`
-      : wsBase
-    let ws: WebSocket | null = null
-
-    try {
-      ws = new WebSocket(wsUrl)
-      ws.onopen = () => {
-        // Đăng ký nhận dữ liệu từ tất cả các thiết bị đang có
-        if (devices.length > 0) {
-          ws?.send(
-            JSON.stringify({
-              type: 'subscribe',
-              deviceIds: devices.map((d) => d._id),
-            })
-          )
-        }
-      }
-
-      ws.onmessage = (event) => {
+  // Xử lý message WebSocket (được gán lại mỗi lần render để luôn dùng state mới nhất)
+  const wsRef = useRef<WebSocket | null>(null)
+  const wsMessageHandlerRef = useRef<(event: MessageEvent) => void>(() => { })
+  wsMessageHandlerRef.current = (event: MessageEvent) => {
         try {
           const msg = JSON.parse(event.data)
+          if (msg.type === 'DEVICE_STATUS' && msg.deviceId) {
+            // Trạng thái online/offline của ESP32 cập nhật real-time
+            const online = Boolean(msg.data?.online)
+            const lastSeenAt = msg.data?.lastSeenAt ?? undefined
+            const known = devicesRef.current.some((d) => d._id === msg.deviceId)
+            if (known) {
+              setDevices((prev) =>
+                prev.map((d) =>
+                  d._id === msg.deviceId
+                    ? { ...d, online, lastSeenAt: lastSeenAt ?? d.lastSeenAt }
+                    : d,
+                ),
+              )
+            } else if (online) {
+              // Thiết bị mới tự đăng ký -> nạp lại danh sách thiết bị
+              apiRequest<DeviceItem[]>('/api/devices')
+                .then((list) => Array.isArray(list) && setDevices(list))
+                .catch(() => { })
+            }
+            return
+          }
+          if (msg.type === 'USER_STATUS' && msg.data?.userId) {
+            // Trạng thái kết nối của người dùng (chỉ admin nhận được)
+            const { userId, connected } = msg.data
+            if (usersList.some((u) => String(u._id) === String(userId))) {
+              setUsersList((prev) =>
+                prev.map((u) =>
+                  String(u._id) === String(userId) ? { ...u, connected: Boolean(connected) } : u,
+                ),
+              )
+            } else if (user?.role === 'admin') {
+              fetchUsers()
+            }
+            return
+          }
           if (msg.type === 'TELEMETRY' && msg.data) {
             const snapshot = normalizeTelemetry({
               temperature: msg.data.temperature ?? null,
@@ -2665,31 +2721,95 @@ export default function Page() {
         } catch (e) {
           console.error('Lỗi phân tích WebSocket message:', e)
         }
+  }
+
+  // Kết nối WebSocket duy nhất (tự kết nối lại khi mất) để nhận dữ liệu thời gian thực
+  useEffect(() => {
+    if (!authChecked || typeof window === 'undefined') return
+    const token = localStorage.getItem('auth_token')
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const wsBase = process.env.NEXT_PUBLIC_WS_URL || `${wsProtocol}//${window.location.hostname}:3001/ws`
+    const wsUrl = token
+      ? `${wsBase}${wsBase.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`
+      : wsBase
+    let disposed = false
+    let reconnectTimer: number | undefined
+
+    const connect = () => {
+      if (disposed) return
+      let ws: WebSocket
+      try {
+        ws = new WebSocket(wsUrl)
+      } catch (e) {
+        console.warn('Không thể mở WebSocket connection:', e)
+        reconnectTimer = window.setTimeout(connect, 3000)
+        return
       }
-    } catch (e) {
-      console.warn('Không thể mở WebSocket connection:', e)
+      wsRef.current = ws
+      ws.onopen = () => {
+        // Đăng ký nhận dữ liệu từ tất cả các thiết bị đang có
+        const ids = devicesRef.current.map((d) => d._id)
+        if (ids.length > 0) ws.send(JSON.stringify({ type: 'subscribe', deviceIds: ids }))
+      }
+      ws.onmessage = (event) => wsMessageHandlerRef.current(event)
+      ws.onclose = (event) => {
+        if (wsRef.current === ws) wsRef.current = null
+        // 4001: server đóng do đăng xuất; 1008: phiên không hợp lệ -> không kết nối lại
+        if (disposed || event.code === 4001 || event.code === 1008) return
+        reconnectTimer = window.setTimeout(connect, 3000)
+      }
     }
+
+    connect()
 
     return () => {
-      if (ws) ws.close()
+      disposed = true
+      window.clearTimeout(reconnectTimer)
+      wsRef.current?.close()
+      wsRef.current = null
     }
-  }, [authChecked, devices, user?.id])
+  }, [authChecked, user?.id])
 
-  // Điều khiển máy bơm
-  const handleTogglePump = async (checked: boolean) => {
+  // Đăng ký lại danh sách thiết bị khi có thiết bị thêm/xóa (không mở lại kết nối)
+  const subscribedDeviceKey = devices.map((d) => d._id).join(',')
+  useEffect(() => {
+    const ws = wsRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN || !subscribedDeviceKey) return
+    ws.send(JSON.stringify({ type: 'subscribe', deviceIds: subscribedDeviceKey.split(',') }))
+  }, [subscribedDeviceKey])
+
+  // Điều khiển máy bơm (assetId: cây cần điều khiển, mặc định là cây đang chọn trên Dashboard)
+  const handleTogglePump = async (checked: boolean, assetId?: string) => {
     // Kiểm tra quyền của tài khoản người dùng hiện tại
     if (checked && user && user.turnOnPump === false) {
       alert('Tài khoản của bạn chưa được cấp quyền bật máy bơm nước (turnOnPump: false). Vui lòng liên hệ quản trị viên để được cấp quyền.')
       return
     }
 
+    const devList = devicesRef.current
+    const findDeviceOfAsset = (targetAssetId: string) =>
+      devList.find((d) => {
+        const dAssetId = typeof d.assetId === 'object' && d.assetId !== null ? (d.assetId as any)._id : d.assetId
+        return String(dAssetId) === String(targetAssetId)
+      })
+
+    // Bấm vòi nước của một cây trong mô hình 3D -> điều khiển thiết bị của cây đó
+    if (assetId) {
+      if (!findDeviceOfAsset(assetId)) {
+        alert('Cây này chưa được gán thiết bị nào, không thể điều khiển máy bơm.')
+        return
+      }
+      if (assetId !== selectedDashboardAssetIdRef.current) {
+        // Chuyển Dashboard sang cây đó để đồng bộ trạng thái và bộ đếm thời gian
+        setSelectedDashboardAssetId(assetId)
+        selectedDashboardAssetIdRef.current = assetId
+        void loadTelemetryForAsset(assetId, devList)
+      }
+    }
+
     setPumpOn(checked)
     const currentAssetId = selectedDashboardAssetIdRef.current
-    const devList = devicesRef.current
-    const matchedDev = devList.find((d) => {
-      const dAssetId = typeof d.assetId === 'object' && d.assetId !== null ? (d.assetId as any)._id : d.assetId
-      return String(dAssetId) === String(currentAssetId)
-    })
+    const matchedDev = findDeviceOfAsset(currentAssetId)
     const targetDevId = matchedDev ? matchedDev._id : (devList.length > 0 ? devList[0]._id : '')
     if (targetDevId) {
       setPumpStatesByDevice((prev) => ({
@@ -2790,17 +2910,14 @@ export default function Page() {
 
         {/* Các nút điều hướng view */}
         <nav className="flex flex-col gap-1">
-          {nav.map((item) => (
+          {nav
+            .filter((item) => item.id !== 'users' || user?.role === 'admin')
+            .map((item) => (
             <Button
               key={item.id}
               variant={view === item.id ? 'secondary' : 'ghost'}
               className="justify-start gap-3"
-              onClick={() => {
-                setView(item.id)
-                if (item.id === 'users') {
-                  fetchUsers()
-                }
-              }}
+              onClick={() => setView(item.id)}
             >
               <item.icon />
               {item.label}
@@ -3145,7 +3262,7 @@ export default function Page() {
                   </div>
                   <Switch
                     checked={pumpOn}
-                    onCheckedChange={handleTogglePump}
+                    onCheckedChange={(checked) => void handleTogglePump(checked)}
                     aria-label="Toggle water pump"
                     className="scale-125 data-[state=checked]:bg-emerald-600 ml-2"
                   />
@@ -3157,6 +3274,9 @@ export default function Page() {
                 devices={devices}
                 telemetryByDevice={telemetryByDevice}
                 pumpStatesByDevice={pumpStatesByDevice}
+                onTogglePump={(assetId, next) => {
+                  void handleTogglePump(next, assetId)
+                }}
                 onLayoutSaved={(assetId, layout) =>
                   setAssets((prev) =>
                     prev.map((asset) =>
@@ -3314,7 +3434,7 @@ export default function Page() {
             </>
           )}
 
-          {view === 'users' && (
+          {view === 'users' && user?.role === 'admin' && (
             <>
               <SectionHeading eyebrow="Hệ thống & Phân quyền" title="Quản lý Người dùng & Quyền bật máy bơm" />
               {userActionMsg && (
@@ -3394,14 +3514,6 @@ export default function Page() {
                         </span>
                       )}
                     </div>
-                  </div>
-                  <div>
-                    <Label>Độ ưu tiên</Label>
-                    <Input readOnly value={`Cấp độ ${user?.priority ?? 1}`} className="text-black bg-slate-50 font-medium" />
-                  </div>
-                  <div>
-                    <Label>Vị trí canh tác</Label>
-                    <Input defaultValue="Khu vườn phía Bắc" className="text-black" />
                   </div>
                   <div>
                     <Label>Múi giờ</Label>
@@ -3583,7 +3695,11 @@ export default function Page() {
       {detailModalData && (
         <DetailModal
           title={detailModalData.title}
-          data={detailModalData.data}
+          data={
+            detailModalData.kind === 'sensors'
+              ? devices.find((d) => d._id === detailModalData.data?._id) ?? detailModalData.data
+              : detailModalData.data
+          }
           kind={detailModalData.kind}
           assets={assets}
           onClose={() => setDetailModalData(null)}

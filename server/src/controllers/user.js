@@ -1,4 +1,11 @@
 const User = require('../models/User');
+const { isUserConnected, disconnectUser } = require('../ws');
+
+// Gan them trang thai ket noi realtime (dang mo WebSocket) cho user.
+function withConnection(user) {
+	const json = user.toJSON ? user.toJSON() : user;
+	return { ...json, connected: isUserConnected(json._id) };
+}
 
 /**
  * Lấy danh sách toàn bộ người dùng (không trả về mật khẩu)
@@ -11,7 +18,7 @@ async function listUsers(req, res) {
 		filter.username = { $regex: search.trim(), $options: 'i' };
 	}
 	const users = await User.find(filter).select('-password').sort({ createdAt: -1 });
-	res.json(users);
+	res.json(users.map(withConnection));
 }
 
 /**
@@ -20,7 +27,7 @@ async function listUsers(req, res) {
 async function getUserById(req, res) {
 	const user = await User.findById(req.params.id).select('-password');
 	if (!user) return res.status(404).json({ error: 'Không tìm thấy người dùng' });
-	res.json(user);
+	res.json(withConnection(user));
 }
 
 /**
@@ -172,6 +179,7 @@ async function patchUserPumpPermission(req, res) {
 async function deleteUser(req, res) {
 	const user = await User.findByIdAndDelete(req.params.id);
 	if (!user) return res.status(404).json({ error: 'Không tìm thấy người dùng' });
+	disconnectUser(user._id);
 
 	// Nếu user bị xóa đang nắm giữ quyền bật bơm, hoàn trả quyền cho admin
 	if (user.turnOnPump) {

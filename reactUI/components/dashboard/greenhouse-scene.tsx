@@ -68,6 +68,7 @@ export interface GreenhouseSceneProps {
     position: StationLayout,
   ) => void | Promise<void>
   onLayoutError: (message: string) => void
+  onTogglePump?: (assetId: string, next: boolean) => void
 }
 
 export function GreenhouseScene({
@@ -84,6 +85,7 @@ export function GreenhouseScene({
   onSelectDevice,
   onMoveStation,
   onLayoutError,
+  onTogglePump,
 }: GreenhouseSceneProps) {
   const firstStation = stations[0]
   const fallbackVariant = firstStation
@@ -177,6 +179,7 @@ export function GreenhouseScene({
             reducedMotion={reducedMotion}
             onSelectAsset={onSelectAsset}
             onSelectDevice={onSelectDevice}
+            onTogglePump={editMode ? undefined : onTogglePump}
           />
         ))}
       </Suspense>
@@ -422,6 +425,7 @@ interface TreeStationProps {
   reducedMotion: boolean
   onSelectAsset: (assetId: string | null) => void
   onSelectDevice: (deviceId: string) => void
+  onTogglePump?: (assetId: string, next: boolean) => void
 }
 
 function TreeStation({
@@ -431,6 +435,7 @@ function TreeStation({
   reducedMotion,
   onSelectAsset,
   onSelectDevice,
+  onTogglePump,
 }: TreeStationProps) {
   const variant = resolveAssetVariant(station.asset.type)
   const [hovered, setHovered] = useState(false)
@@ -498,7 +503,7 @@ function TreeStation({
             }
             valueLabel={
               isSelected && deviceSoil !== null && deviceSoil !== undefined
-                ? `${Math.round(deviceSoil)}% ??t`
+                ? `${Math.round(deviceSoil)}% đất`
                 : null
             }
             onSelect={onSelectDevice}
@@ -511,6 +516,11 @@ function TreeStation({
         pumpOn={station.pumpOn}
         selected={selected}
         reducedMotion={reducedMotion}
+        onToggle={
+          onTogglePump
+            ? () => onTogglePump(station.asset._id, !station.pumpOn)
+            : undefined
+        }
       />
 
       {(selected || hovered) && (
@@ -538,11 +548,8 @@ function TreeStation({
             </span>
             {soil !== null && soil !== undefined && (
               <span className="text-slate-500">
-                ? {Math.round(soil)}% ??t
+                · {Math.round(soil)}% đất
               </span>
-            )}
-            {station.pumpOn && (
-              <span className="font-semibold text-emerald-700">? T??i</span>
             )}
           </div>
         </Html>
@@ -929,19 +936,20 @@ function HealingParticles({
   treeHeight: number
   reducedMotion: boolean
 }) {
-  const count = 28
+  const count = 40
   const seeds = useMemo(
     () =>
       Array.from({ length: count }, (_, index) => ({
         angle: (index / count) * Math.PI * 2 + Math.random() * 0.5,
-        radius: 0.24 + Math.random() * 0.38,
-        speed: 0.18 + Math.random() * 0.18,
+        radius: 0.2 + Math.random() * 0.45,
+        speed: 0.28 + Math.random() * 0.22,
         offset: Math.random(),
       })),
     [],
   )
-  const baseY = soilTop + treeHeight * 0.55
-  const topY = soilTop + treeHeight + 0.35
+  // Bay từ mặt đất lên cao hơn tán cây để dễ nhận thấy khi đang tưới.
+  const baseY = soilTop + 0.05
+  const topY = soilTop + treeHeight + 0.7
 
   const geometry = useMemo(() => {
     const next = new THREE.BufferGeometry()
@@ -1011,15 +1019,15 @@ function HealingParticles({
     <points geometry={geometry} frustumCulled={false}>
       <pointsMaterial
         map={texture ?? undefined}
-        color={SCENE_COLORS.healing}
-        size={0.11}
+        color="#059669"
+        size={0.22}
         sizeAttenuation
         transparent
-        opacity={0.85}
+        opacity={0.95}
         alphaTest={0.01}
         depthTest={false}
         depthWrite={false}
-        blending={THREE.AdditiveBlending}
+        blending={THREE.NormalBlending}
         toneMapped={false}
       />
     </points>
@@ -1031,16 +1039,41 @@ function WateringValve({
   pumpOn,
   selected,
   reducedMotion,
+  onToggle,
 }: {
   variant: AssetModelVariant
   pumpOn: boolean
   selected: boolean
   reducedMotion: boolean
+  onToggle?: () => void
 }) {
   const soilTop = soilTopForVariant(variant)
+  const [hovered, setHovered] = useState(false)
+  const get = useThree((state) => state.get)
+  useCursor(hovered && Boolean(onToggle))
+  const showLabel = selected || (hovered && Boolean(onToggle))
 
   return (
-    <group>
+    <group
+      onClick={(event) => {
+        if (!onToggle) return
+        event.stopPropagation()
+        onToggle()
+        get().invalidate()
+      }}
+      onPointerOver={(event) => {
+        if (!onToggle) return
+        event.stopPropagation()
+        setHovered(true)
+        get().invalidate()
+      }}
+      onPointerOut={(event) => {
+        if (!onToggle) return
+        event.stopPropagation()
+        setHovered(false)
+        get().invalidate()
+      }}
+    >
       <Pipe
         position={[0.835, 0.2, 0.38]}
         rotation={[0, 0, Math.PI / 2]}
@@ -1172,7 +1205,19 @@ function WateringValve({
         </mesh>
       </group>
 
-      {selected && (
+      {onToggle && (
+        <mesh position={[0.72, 0.5, 0.38]}>
+          <boxGeometry args={[0.36, 0.7, 0.36]} />
+          <meshBasicMaterial
+            transparent
+            opacity={0}
+            depthWrite={false}
+            colorWrite={false}
+          />
+        </mesh>
+      )}
+
+      {showLabel && (
         <Html
           position={[0.72, 0.78, 0.38]}
           center
@@ -1188,6 +1233,11 @@ function WateringValve({
             }`}
           >
             Van tưới · {pumpOn ? 'ĐANG MỞ' : 'ĐANG ĐÓNG'}
+            {onToggle && (
+              <span className="ml-1 font-normal text-slate-500">
+                · Bấm để {pumpOn ? 'tắt' : 'bật'} bơm
+              </span>
+            )}
           </div>
         </Html>
       )}

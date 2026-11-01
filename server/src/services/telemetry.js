@@ -4,6 +4,7 @@ const Telemetry = require('../models/Telemetry');
 const { broadcast } = require('../ws');
 const { onPumpState } = require('./watering');
 const { evaluateTelemetry } = require('./automation');
+const { markDeviceSeen } = require('./presence');
 
 const RANGES = {
   temperature: [-10, 60],
@@ -50,12 +51,14 @@ function validateTelemetry(payload) {
 }
 
 // Thiet bi la gui du lieu lan dau se duoc tu dang ky (chua gan Asset).
-function touchDevice(deviceId, now) {
-  return Device.findByIdAndUpdate(
+async function touchDevice(deviceId, now) {
+  const device = await Device.findByIdAndUpdate(
     deviceId,
     { $set: { lastSeenAt: now }, $setOnInsert: { name: deviceId } },
     { upsert: true, new: true }
   );
+  markDeviceSeen(deviceId, now);
+  return device;
 }
 
 async function handleTelemetry(deviceId, payload) {

@@ -10,7 +10,7 @@
 
 // IP cua may dang chay MQTT broker (cung mang LAN voi ESP32), KHONG dung
 // "localhost".
-#define MQTT_HOST "180.93.195.207"
+#define MQTT_HOST "180.93.125.225"
 #define MQTT_PORT 1883
 
 #define DEVICE_ID "esp32_01"

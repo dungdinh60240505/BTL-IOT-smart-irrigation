@@ -46,6 +46,7 @@ export interface Greenhouse3DProps {
   telemetryByDevice: Record<string, GreenhouseTelemetry>
   pumpStatesByDevice: Record<string, boolean>
   onLayoutSaved?: (assetId: string, layout: StationLayout) => void
+  onTogglePump?: (assetId: string, next: boolean) => void
 }
 
 export default function Greenhouse3D({
@@ -54,6 +55,7 @@ export default function Greenhouse3D({
   telemetryByDevice,
   pumpStatesByDevice,
   onLayoutSaved,
+  onTogglePump,
 }: Greenhouse3DProps) {
   const [layout, setLayout] = useState<Record<string, StationLayout>>(
     () => reconcileLayout(assets, {}),
@@ -391,6 +393,7 @@ export default function Greenhouse3D({
                   onLayoutError={(message) =>
                     setLayoutMessage({ type: 'error', text: message })
                   }
+                  onTogglePump={onTogglePump}
                 />
               </SceneErrorBoundary>
             ) : (
@@ -431,7 +434,7 @@ export default function Greenhouse3D({
               <span className="hidden rounded-full bg-white/85 px-2.5 py-1 shadow-sm sm:inline">
                 {editMode
                   ? 'Snap 0.5 m · Chống chồng lấn · 30 FPS'
-                  : 'Click node để xem telemetry'}
+                  : 'Click node để xem telemetry · Click vòi nước để bật/tắt bơm'}
               </span>
             </div>
           </div>

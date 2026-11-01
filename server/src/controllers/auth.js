@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const config = require('../config');
+const { disconnectUser } = require('../ws');
 
 const PASSWORD_MIN_LENGTH = 8;
 
@@ -111,6 +112,7 @@ async function updateAccount(req, res) {
 
 async function deleteAccount(req, res) {
 	await User.findByIdAndDelete(req.user._id);
+	disconnectUser(req.user._id);
 	res.clearCookie('auth_token', { httpOnly: true, sameSite: 'lax', path: '/' });
 	res.status(204).end();
 }
@@ -118,6 +120,7 @@ async function deleteAccount(req, res) {
 async function logout(req, res) {
 	req.user.status_online = false;
 	await req.user.save();
+	disconnectUser(req.user._id);
 	res.clearCookie('auth_token', { httpOnly: true, sameSite: 'lax', path: '/' });
 	res.redirect(303, '/login');
 }
