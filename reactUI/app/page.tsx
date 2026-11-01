@@ -2727,6 +2727,7 @@ export default function Page() {
         })
       } catch (err: any) {
         console.error('Lỗi gửi lệnh bơm:', err)
+        window.alert(err?.message || 'Không gửi được lệnh điều khiển máy bơm')
         // Rollback nếu gửi lệnh lỗi
         setPumpOn(!checked)
         if (targetDevId) {
@@ -2834,6 +2835,21 @@ export default function Page() {
         {/* Top Header */}
         <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-emerald-100 bg-white/85 px-5 backdrop-blur">
           <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setOpen(!open)}
+              aria-label="Toggle sidebar"
+            >
+              {open ? <Menu /> : <PanelLeft />}
+            </Button>
+            <div>
+              <p className="text-sm font-semibold">{nav.find((n) => n.id === view)?.label}</p>
+              <p className="text-xs text-muted-foreground">Hệ thống điều khiển & Giám sát thông minh</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
             <div className="relative" ref={notificationsRef}>
               <Button
                 variant="ghost"
@@ -2938,21 +2954,6 @@ export default function Page() {
               )}
             </div>
 
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setOpen(!open)}
-              aria-label="Toggle sidebar"
-            >
-              {open ? <Menu /> : <PanelLeft />}
-            </Button>
-            <div>
-              <p className="text-sm font-semibold">{nav.find((n) => n.id === view)?.label}</p>
-              <p className="text-xs text-muted-foreground">Hệ thống điều khiển & Giám sát thông minh</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
             <Button
               variant="ghost"
               size="sm"

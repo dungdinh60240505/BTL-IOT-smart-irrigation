@@ -22,6 +22,9 @@ function normalizeTelemetryPayload(payload) {
   if (normalized.soil !== undefined && normalized.soil_humidity === undefined) {
     normalized.soil_humidity = normalized.soil;
   }
+  if (normalized.water !== undefined && normalized.water_level === undefined) {
+    normalized.water_level = normalized.water;
+  }
 
   return normalized;
 }

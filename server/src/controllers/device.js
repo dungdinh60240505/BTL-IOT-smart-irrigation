@@ -10,6 +10,7 @@ const DEVICE_ATTRIBUTE_FIELDS = [
 	'flow_rate_lpm',
 ];
 const { sendDeviceCommand } = require('../mqtt');
+const { checkWaterLevelForPump } = require('../services/watering');
 
 async function listDevices(req, res) {
 	const devices = await Device.find().sort('_id');
@@ -97,6 +98,17 @@ async function sendCommand(req, res) {
 	const device = await Device.findById(req.params.id);
 	if (!device) return res.status(404).json({ error: 'Khong tim thay thiet bi' });
 	if (!device.online) return res.status(409).json({ error: 'Thiet bi dang offline, khong gui lenh' });
+	if (action === 'WATER' && state === 'ON') {
+		const check = await checkWaterLevelForPump(device._id);
+		if (!check.allowed) {
+			return res.status(409).json({
+				error: `Mực nước bể chứa (${check.waterLevel}%) thấp hơn ngưỡng tối thiểu (${check.minWater}%). Không thể bật máy bơm!`,
+				code: 'WATER_LOW',
+				waterLevel: check.waterLevel,
+				minWater: check.minWater,
+			});
+		}
+	}
 	await sendDeviceCommand(device._id, action, state);
 	// 202: lenh da gui; trang thai thuc te se cap nhat khi thiet bi xac nhan.
 	res.status(202).json({ sent: true, deviceId: device._id, action, state });

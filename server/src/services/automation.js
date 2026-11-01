@@ -139,12 +139,11 @@ async function evaluateTelemetry(deviceId, values) {
   }
 
   let autoOffSent = false;
-  if (
-    typeof soil === 'number' &&
-    Number.isFinite(soil) &&
-    soil > thresholds.soilMax &&
-    await shouldAutoOff(device)
-  ) {
+  const soilTooWet = typeof soil === 'number' && Number.isFinite(soil) && soil > thresholds.soilMax;
+  // Muc nuoc be duoi nguong min: tat bom de tranh chay kho
+  const waterTooLow = typeof water === 'number' && Number.isFinite(water) && water < thresholds.waterMin;
+  if ((soilTooWet || waterTooLow) && await shouldAutoOff(device)) {
+    if (waterTooLow) console.warn(`[automation] muc nuoc ${water}% < ${thresholds.waterMin}%, tat bom ${device._id}`);
     try {
       await sendWaterCommand(device._id, 'OFF');
       await Device.updateOne(

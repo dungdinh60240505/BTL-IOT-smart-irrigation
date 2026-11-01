@@ -1,8 +1,31 @@
 const Device = require('../models/Device');
 const Attribute = require('../models/Attribute');
 const WateringEvent = require('../models/WateringEvent');
+const Telemetry = require('../models/Telemetry');
 const { broadcast } = require('../ws');
 const { defaultFlowRateLpm } = require('../config');
+
+const DEFAULT_MIN_WATER_LEVEL = 20;
+
+// Kiem tra muc nuoc be chua co du de bat bom hay khong.
+// Neu chua co du lieu water_level thi cho phep (khong chan).
+async function checkWaterLevelForPump(deviceId, currentWaterLevel) {
+  const attrs = await Attribute.findOne({ deviceId });
+  const minWater = typeof attrs?.safe_min_water_level === 'number'
+    ? attrs.safe_min_water_level
+    : DEFAULT_MIN_WATER_LEVEL;
+
+  let waterLevel = currentWaterLevel;
+  if (typeof waterLevel !== 'number') {
+    const latest = await Telemetry.findOne({ deviceId, water_level: { $ne: null } }).sort({ timestamp: -1 });
+    waterLevel = latest?.water_level;
+  }
+
+  if (typeof waterLevel !== 'number' || !Number.isFinite(waterLevel)) {
+    return { allowed: true, waterLevel: null, minWater };
+  }
+  return { allowed: waterLevel >= minWater, waterLevel, minWater };
+}
 
 // Lich su tuoi duoc ghi theo trang thai do THIET BI xac nhan, khong theo lenh da gui.
 async function onPumpState(deviceId, state) {
@@ -29,4 +52,4 @@ async function onPumpState(deviceId, state) {
   broadcast(deviceId, 'PUMP_STATE', { state, timestamp: now });
 }
 
-module.exports = { onPumpState };
+module.exports = { onPumpState, checkWaterLevelForPump };

@@ -1,6 +1,3 @@
-// Chỉ lắp và đọc dữ liệu từ DHT11
-// Mục tiêu: test sensor DHT11 trước khi nối WiFi / MQTT / LED / bơm
-// Sau này nếu cần, bạn có thể bỏ comment các phần khác ra lại.
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
@@ -24,9 +21,9 @@
 // -------------------- CẤU HÌNH  --------------------
 #define PIN_DHT 4      // DHT11 nối chân GPIO4
 #define DHT_TYPE DHT11 // chuyen sang DHT11 khi nap code, simulator DHT22
-// #define PIN_LED 2      // LED test, dùng chân GPIO2
 
 #define PIN_SOIL 32  // chân cắm độ ẩm đất D32
+#define PIN_WATER 35 // chân cảm biến mực nước GPIO35 (ADC1)
 #define PIN_RELAY 5  // IN relay 5V nối GPIO5
 #define RELAY_ON LOW // Relay 1 kênh thường kích mức LOW
 #define RELAY_OFF HIGH
@@ -145,7 +142,10 @@ void publishTelemetry() {
   float temperature = dht.readTemperature();
   float humidity = dht.readHumidity();
   int soilRaw = analogRead(PIN_SOIL);
-  int soilPercent = map(soilRaw, 4095, 0, 0, 100);
+  int soilPercent = constrain(map(soilRaw, 4095, 0, 0, 100), 0, 100);
+
+  int waterRaw = analogRead(PIN_WATER);
+  int waterPercent = constrain(map(waterRaw, 0, 4095, 0, 100), 0, 100);
 
   if (isnan(temperature) || isnan(humidity)) {
     Serial.println("Loi doc DHT");
@@ -156,6 +156,7 @@ void publishTelemetry() {
   doc["temperature"] = temperature;
   doc["humidity"] = humidity;
   doc["soil"] = soilPercent;
+  doc["water_level"] = waterPercent;
 
   String payload;
   serializeJson(doc, payload);
@@ -163,7 +164,8 @@ void publishTelemetry() {
   String telemetryTopic = "dt/telemetry/" + String(DEVICE_ID);
   mqttClient.publish(telemetryTopic.c_str(), payload.c_str());
 
-  Serial.printf("Publish to %s: %s\n", telemetryTopic.c_str(), payload.c_str());
+  Serial.printf("Publish to %s: %s (soilRaw: %d, waterRaw: %d)\n",
+                telemetryTopic.c_str(), payload.c_str(), soilRaw, waterRaw);
 }
 
 const int unusedPins[] = {12, 13, 14, 25, 26, 27, 33};
@@ -178,8 +180,7 @@ void setup() {
     digitalWrite(unusedPins[i], LOW);
   }
 
-  pinMode(PIN_LED, OUTPUT);
-  digitalWrite(PIN_LED, LOW);
+  pinMode(PIN_WATER, INPUT);
   pinMode(PIN_RELAY, OUTPUT);
   digitalWrite(PIN_RELAY, RELAY_OFF);
   mqttClient.setCallback(mqttCallback);
