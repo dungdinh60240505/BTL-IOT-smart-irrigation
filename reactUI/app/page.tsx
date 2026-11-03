@@ -230,6 +230,8 @@ function Metric({
   value,
   unit,
   detail,
+  isAlert = false,
+  alertMessage,
   children,
 }: {
   icon: typeof Thermometer
@@ -237,20 +239,60 @@ function Metric({
   value: string
   unit: string
   detail: string
+  isAlert?: boolean
+  alertMessage?: string
   children?: React.ReactNode
 }) {
   return (
-    <Card className="border-emerald-100/90 bg-white/95 shadow-xs">
+    <Card
+      className={`shadow-xs transition-colors duration-300 ${
+        isAlert
+          ? 'border-amber-400 bg-amber-50/90 text-amber-950 ring-1 ring-amber-300'
+          : 'border-emerald-100/90 bg-white/95'
+      }`}
+    >
       <CardContent className="p-3">
-        <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium text-black">
-          <Icon className="size-4 text-emerald-600" />
-          {label}
+        <div className="mb-1.5 flex items-center justify-between gap-1.5">
+          <div className="flex items-center gap-1.5 text-[11px] font-medium text-black">
+            <Icon
+              className={`size-4 ${
+                isAlert ? 'text-amber-600 animate-pulse' : 'text-emerald-600'
+              }`}
+            />
+            {label}
+          </div>
+          {isAlert && (
+            <span className="inline-flex items-center gap-1 rounded bg-amber-200/80 px-1.5 py-0.5 text-[9px] font-bold text-amber-900 border border-amber-300">
+              <AlertTriangle className="size-3 text-amber-700" />
+              Cảnh báo
+            </span>
+          )}
         </div>
         <div className="flex items-end justify-between gap-2">
           <div>
-            <span className="text-2xl font-semibold text-slate-900">{value}</span>
-            <span className="ml-1 text-xs text-slate-500">{unit}</span>
-            <p className="mt-1 text-[10px] text-slate-500">{detail}</p>
+            <span
+              className={`text-2xl font-semibold ${
+                isAlert ? 'text-amber-950' : 'text-slate-900'
+              }`}
+            >
+              {value}
+            </span>
+            <span
+              className={`ml-1 text-xs ${
+                isAlert ? 'text-amber-800' : 'text-slate-500'
+              }`}
+            >
+              {unit}
+            </span>
+            <p
+              className={`mt-1 text-[10px] ${
+                isAlert
+                  ? 'font-medium text-amber-800'
+                  : 'text-slate-500'
+              }`}
+            >
+              {alertMessage ? `${detail} · ${alertMessage}` : detail}
+            </p>
           </div>
           {children}
         </div>
@@ -3338,6 +3380,26 @@ export default function Page() {
                   100,
                 )
 
+                const isTempAlert =
+                  latestTelemetry.temperature !== null &&
+                  latestTelemetry.temperature !== undefined &&
+                  (latestTelemetry.temperature < minTemp || latestTelemetry.temperature > maxTemp)
+
+                const isHumidityAlert =
+                  latestTelemetry.humidity !== null &&
+                  latestTelemetry.humidity !== undefined &&
+                  (latestTelemetry.humidity < minHum || latestTelemetry.humidity > maxHum)
+
+                const isSoilAlert =
+                  latestTelemetry.soil_humidity !== null &&
+                  latestTelemetry.soil_humidity !== undefined &&
+                  (latestTelemetry.soil_humidity < minSoil || latestTelemetry.soil_humidity > maxSoil)
+
+                const isWaterAlert =
+                  latestTelemetry.water_level !== null &&
+                  latestTelemetry.water_level !== undefined &&
+                  (latestTelemetry.water_level < minWater || latestTelemetry.water_level > maxWater)
+
                 return (
                   <div className="mb-8 grid grid-cols-4 gap-2">
                     <Metric
@@ -3345,6 +3407,14 @@ export default function Page() {
                       label="Nhiệt độ"
                       value={latestTelemetry.temperature !== null && latestTelemetry.temperature !== undefined ? `${latestTelemetry.temperature}` : '--'}
                       unit={latestTelemetry.temperature !== null && latestTelemetry.temperature !== undefined ? '°C' : ''}
+                      isAlert={Boolean(isTempAlert)}
+                      alertMessage={
+                        isTempAlert
+                          ? latestTelemetry.temperature! < minTemp
+                            ? 'Nhiệt độ quá thấp'
+                            : 'Nhiệt độ quá cao'
+                          : undefined
+                      }
                       detail={
                         matchedDev
                           ? `Ngưỡng cảnh báo: ${minTemp}°C – ${maxTemp}°C`
@@ -3356,6 +3426,14 @@ export default function Page() {
                       label="Độ ẩm không khí"
                       value={latestTelemetry.humidity !== null && latestTelemetry.humidity !== undefined ? `${latestTelemetry.humidity}` : '--'}
                       unit={latestTelemetry.humidity !== null && latestTelemetry.humidity !== undefined ? '%' : ''}
+                      isAlert={Boolean(isHumidityAlert)}
+                      alertMessage={
+                        isHumidityAlert
+                          ? latestTelemetry.humidity! < minHum
+                            ? 'Độ ẩm quá thấp'
+                            : 'Độ ẩm quá cao'
+                          : undefined
+                      }
                       detail={
                         matchedDev
                           ? `Ngưỡng cảnh báo: ${minHum}% – ${maxHum}%`
@@ -3367,6 +3445,14 @@ export default function Page() {
                       label="Độ ẩm đất"
                       value={latestTelemetry.soil_humidity !== null && latestTelemetry.soil_humidity !== undefined ? `${latestTelemetry.soil_humidity}` : '--'}
                       unit={latestTelemetry.soil_humidity !== null && latestTelemetry.soil_humidity !== undefined ? '%' : ''}
+                      isAlert={Boolean(isSoilAlert)}
+                      alertMessage={
+                        isSoilAlert
+                          ? latestTelemetry.soil_humidity! < minSoil
+                            ? 'Đất thiếu nước'
+                            : 'Đất thừa nước'
+                          : undefined
+                      }
                       detail={
                         matchedDev
                           ? `Ngưỡng an toàn: ${minSoil}% – ${maxSoil}%`
@@ -3382,13 +3468,22 @@ export default function Page() {
                                 outerRadius="100%"
                                 startAngle={90}
                                 endAngle={-270}
-                                data={[{ value: latestTelemetry.soil_humidity, fill: '#0891b2' }]}
+                                data={[
+                                  {
+                                    value: latestTelemetry.soil_humidity,
+                                    fill: isSoilAlert ? '#d97706' : '#0891b2',
+                                  },
+                                ]}
                               >
                                 <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
                                 <RadialBar background={{ fill: '#e2e8f0' }} dataKey="value" />
                               </RadialBarChart>
                             </ResponsiveContainer>
-                            <span className="absolute inset-0 grid place-items-center text-[10px] font-semibold">
+                            <span
+                              className={`absolute inset-0 grid place-items-center text-[10px] font-semibold ${
+                                isSoilAlert ? 'text-amber-900' : 'text-slate-900'
+                              }`}
+                            >
                               {latestTelemetry.soil_humidity}%
                             </span>
                           </>
@@ -3404,6 +3499,14 @@ export default function Page() {
                       label="Mực nước bể chứa"
                       value={latestTelemetry.water_level !== null && latestTelemetry.water_level !== undefined ? `${latestTelemetry.water_level}` : '--'}
                       unit={latestTelemetry.water_level !== null && latestTelemetry.water_level !== undefined ? '%' : ''}
+                      isAlert={Boolean(isWaterAlert)}
+                      alertMessage={
+                        isWaterAlert
+                          ? latestTelemetry.water_level! < minWater
+                            ? 'Bể cạn nước'
+                            : 'Bể đầy nước'
+                          : undefined
+                      }
                       detail={
                         matchedDev
                           ? `Ngưỡng an toàn: ${minWater}% – ${maxWater}%`
@@ -3412,7 +3515,9 @@ export default function Page() {
                     >
                       <div className="flex h-14 w-4 items-end overflow-hidden rounded-full bg-cyan-50">
                         <div
-                          className="w-full bg-cyan-500 transition-all duration-300"
+                          className={`w-full transition-all duration-300 ${
+                            isWaterAlert ? 'bg-amber-500' : 'bg-cyan-500'
+                          }`}
                           style={{
                             height: `${latestTelemetry.water_level !== null && latestTelemetry.water_level !== undefined ? latestTelemetry.water_level : 0}%`,
                           }}
