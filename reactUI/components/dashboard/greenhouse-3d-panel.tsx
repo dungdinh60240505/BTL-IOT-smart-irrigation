@@ -362,7 +362,9 @@ function DeviceTelemetry({
           {!device.online
             ? 'Dữ liệu bên dưới là lần cập nhật cuối cùng trước khi mất kết nối.'
             : pumpOn
-              ? 'Lệnh bơm đã được gửi và van đang mở trong mô hình 3D.'
+              ? device.pumpStartedAt
+                ? `Bắt đầu tưới (${station.asset.name}): ${formatDateTime(device.pumpStartedAt)}`
+                : 'Lệnh bơm đã được gửi và van đang mở trong mô hình 3D.'
               : 'Bật công tắc máy bơm ở phía trên để bắt đầu tưới.'}
         </p>
       </div>

@@ -7,7 +7,16 @@ const notificationSchema = new Schema(
     type: {
       type: String,
       required: true,
-      enum: ['SOIL_LOW', 'SOIL_HIGH', 'WATER_LOW', 'WATER_HIGH'],
+      enum: [
+        'SOIL_LOW',
+        'SOIL_HIGH',
+        'WATER_LOW',
+        'WATER_HIGH',
+        'TEMP_LOW',
+        'TEMP_HIGH',
+        'HUMIDITY_LOW',
+        'HUMIDITY_HIGH',
+      ],
     },
     severity: { type: String, enum: ['warning', 'critical'], default: 'warning' },
     message: { type: String, required: true },

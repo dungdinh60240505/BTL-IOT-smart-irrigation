@@ -14,6 +14,10 @@ export interface GreenhouseAsset {
 }
 
 export interface GreenhouseDeviceAttributes {
+  safe_min_temperature?: number
+  safe_max_temperature?: number
+  safe_min_humidity?: number
+  safe_max_humidity?: number
   safe_min_soil_humidity?: number
   safe_max_soil_humidity?: number
   safe_min_water_level?: number
@@ -26,6 +30,8 @@ export interface GreenhouseDevice {
   type?: string
   assetId?: string | { _id: string } | null
   online?: boolean
+  pumpState?: 'ON' | 'OFF'
+  pumpStartedAt?: string | null
   lastSeenAt?: string
   attributes?: GreenhouseDeviceAttributes | null
 }

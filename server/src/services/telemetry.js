@@ -86,6 +86,10 @@ async function handleTelemetry(deviceId, payload) {
 
 const ATTRIBUTE_FIELDS = [
   'firmware_version',
+  'safe_min_temperature',
+  'safe_max_temperature',
+  'safe_min_humidity',
+  'safe_max_humidity',
   'safe_min_soil_humidity',
   'safe_max_soil_humidity',
   'safe_min_water_level',

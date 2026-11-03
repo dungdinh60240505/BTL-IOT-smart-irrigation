@@ -5,6 +5,7 @@ const app = require('./app');
 const User = require('./models/User');
 const { initWs } = require('./ws');
 const { initMqtt } = require('./mqtt');
+const { backfillPumpStartedAt } = require('./services/watering');
 const { initDevicePresence } = require('./services/presence');
 
 async function main() {
@@ -19,6 +20,7 @@ async function main() {
   console.log('[db] da ket noi MongoDB');
   await User.init();
   await User.initAdmin();
+  await backfillPumpStartedAt();
 
   const server = http.createServer(app);
   initWs(server);

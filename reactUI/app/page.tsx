@@ -91,9 +91,14 @@ export interface DeviceItem {
   assetId?: string | null
   online?: boolean
   pumpState?: 'ON' | 'OFF'
+  pumpStartedAt?: string | null
   lastSeenAt?: string
   attributes?: {
     firmware_version?: string
+    safe_min_temperature?: number
+    safe_max_temperature?: number
+    safe_min_humidity?: number
+    safe_max_humidity?: number
     safe_min_soil_humidity?: number
     safe_max_soil_humidity?: number
     safe_min_water_level?: number
@@ -146,7 +151,15 @@ export interface NotificationItem {
   _id: string
   deviceId: string
   assetId?: string | { _id: string; name?: string } | null
-  type: 'SOIL_LOW' | 'SOIL_HIGH' | 'WATER_LOW' | 'WATER_HIGH'
+  type:
+    | 'SOIL_LOW'
+    | 'SOIL_HIGH'
+    | 'WATER_LOW'
+    | 'WATER_HIGH'
+    | 'TEMP_LOW'
+    | 'TEMP_HIGH'
+    | 'HUMIDITY_LOW'
+    | 'HUMIDITY_HIGH'
   severity: 'warning' | 'critical'
   message: string
   value?: number | null
@@ -162,6 +175,10 @@ const NOTIFICATION_LABELS: Record<NotificationItem['type'], string> = {
   SOIL_HIGH: 'Độ ẩm đất cao',
   WATER_LOW: 'Mực nước thấp',
   WATER_HIGH: 'Mực nước cao',
+  TEMP_LOW: 'Nhiệt độ thấp',
+  TEMP_HIGH: 'Nhiệt độ cao',
+  HUMIDITY_LOW: 'Độ ẩm không khí thấp',
+  HUMIDITY_HIGH: 'Độ ẩm không khí cao',
 }
 
 type View = 'dashboard' | 'assets' | 'sensors' | 'telemetry' | 'history' | 'users' | 'profile' | 'settings'
@@ -475,6 +492,7 @@ function DualRangeSlider({
   onChange,
   unit = '%',
   trackColor = 'bg-emerald-500',
+  disabled = false,
 }: {
   min?: number
   max?: number
@@ -484,13 +502,19 @@ function DualRangeSlider({
   onChange: (minVal: number, maxVal: number) => void
   unit?: string
   trackColor?: string
+  disabled?: boolean
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
 
-  const minPercent = Math.max(0, Math.min(100, ((minValue - min) / (max - min)) * 100))
-  const maxPercent = Math.max(0, Math.min(100, ((maxValue - min) / (max - min)) * 100))
+  const clampedMinVal = Math.max(min, Math.min(max, minValue))
+  const clampedMaxVal = Math.max(clampedMinVal, Math.min(max, maxValue))
+
+  const span = Math.max(1, max - min)
+  const minPercent = Math.max(0, Math.min(100, ((clampedMinVal - min) / span) * 100))
+  const maxPercent = Math.max(0, Math.min(100, ((clampedMaxVal - min) / span) * 100))
 
   const handlePointerDown = (type: 'min' | 'max') => (e: React.PointerEvent<HTMLDivElement>) => {
+    if (disabled) return
     e.preventDefault()
     e.stopPropagation()
     const target = e.currentTarget
@@ -501,13 +525,14 @@ function DualRangeSlider({
       const rect = containerRef.current.getBoundingClientRect()
       const percent = Math.max(0, Math.min(1, (moveEv.clientX - rect.left) / rect.width))
       const rawVal = Math.round((min + percent * (max - min)) / step) * step
+      const boundedVal = Math.max(min, Math.min(max, rawVal))
 
       if (type === 'min') {
-        const nextMin = Math.min(rawVal, maxValue)
-        onChange(Math.max(min, nextMin), maxValue)
+        const nextMin = Math.min(boundedVal, clampedMaxVal)
+        onChange(Math.max(min, nextMin), clampedMaxVal)
       } else {
-        const nextMax = Math.max(rawVal, minValue)
-        onChange(minValue, Math.min(max, nextMax))
+        const nextMax = Math.max(boundedVal, clampedMinVal)
+        onChange(clampedMinVal, Math.min(max, nextMax))
       }
     }
 
@@ -526,35 +551,46 @@ function DualRangeSlider({
   }
 
   const handleTrackClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!containerRef.current) return
+    if (disabled || !containerRef.current) return
     const rect = containerRef.current.getBoundingClientRect()
     const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
-    const clickVal = Math.round((min + percent * (max - min)) / step) * step
-    if (Math.abs(clickVal - minValue) <= Math.abs(clickVal - maxValue)) {
-      const nextMin = Math.min(clickVal, maxValue)
-      onChange(Math.max(min, nextMin), maxValue)
+    const rawVal = Math.round((min + percent * (max - min)) / step) * step
+    const clickVal = Math.max(min, Math.min(max, rawVal))
+    if (Math.abs(clickVal - clampedMinVal) <= Math.abs(clickVal - clampedMaxVal)) {
+      const nextMin = Math.min(clickVal, clampedMaxVal)
+      onChange(Math.max(min, nextMin), clampedMaxVal)
     } else {
-      const nextMax = Math.max(clickVal, minValue)
-      onChange(minValue, Math.min(max, nextMax))
+      const nextMax = Math.max(clickVal, clampedMinVal)
+      onChange(clampedMinVal, Math.min(max, nextMax))
     }
   }
 
+  const ticks = [
+    min,
+    Math.round(min + (max - min) * 0.25),
+    Math.round(min + (max - min) * 0.5),
+    Math.round(min + (max - min) * 0.75),
+    max,
+  ]
+
   return (
-    <div className="flex flex-col gap-2.5 w-full select-none py-1">
+    <div className={`flex flex-col gap-2.5 w-full select-none py-1 ${disabled ? 'opacity-65' : ''}`}>
       <div className="flex items-center justify-between text-xs font-semibold">
         <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white border border-slate-300 text-slate-800 shadow-2xs">
-          <span className="text-[10px] text-slate-500 font-normal">Tối thiểu:</span> {minValue}{unit}
+          <span className="text-[10px] text-slate-500 font-normal">Tối thiểu:</span> {clampedMinVal}{unit}
         </span>
-        <span className="text-[11px] text-slate-500 font-medium">Khoảng cách an toàn: {maxValue - minValue}{unit}</span>
+        <span className="text-[11px] text-slate-500 font-medium">
+          Giới hạn cho phép: {min}{unit} – {max}{unit} · Khoảng: {clampedMaxVal - clampedMinVal}{unit}
+        </span>
         <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white border border-slate-300 text-slate-800 shadow-2xs">
-          <span className="text-[10px] text-slate-500 font-normal">Tối đa:</span> {maxValue}{unit}
+          <span className="text-[10px] text-slate-500 font-normal">Tối đa:</span> {clampedMaxVal}{unit}
         </span>
       </div>
 
       <div
         ref={containerRef}
         onClick={handleTrackClick}
-        className="relative h-7 flex items-center cursor-pointer touch-none"
+        className={`relative h-7 flex items-center touch-none ${disabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}
       >
         <div className="w-full h-2.5 rounded-full bg-slate-200" />
 
@@ -569,10 +605,17 @@ function DualRangeSlider({
         {/* Min Thumb (hình tròn kéo 1) */}
         <div
           role="slider"
-          aria-valuenow={minValue}
+          aria-valuemin={min}
+          aria-valuemax={max}
+          aria-valuenow={clampedMinVal}
+          aria-disabled={disabled}
           aria-label="Hình tròn chọn ngưỡng tối thiểu"
           onPointerDown={handlePointerDown('min')}
-          className="absolute size-6 -translate-x-1/2 rounded-full bg-white border-2 border-emerald-600 shadow-md cursor-grab active:cursor-grabbing hover:scale-125 transition-transform flex items-center justify-center z-10"
+          className={`absolute size-6 -translate-x-1/2 rounded-full bg-white border-2 border-emerald-600 shadow-md transition-transform flex items-center justify-center z-10 ${
+            disabled
+              ? 'cursor-not-allowed'
+              : 'cursor-grab active:cursor-grabbing hover:scale-125'
+          }`}
           style={{ left: `${minPercent}%` }}
         >
           <div className="size-2 rounded-full bg-emerald-600" />
@@ -581,10 +624,17 @@ function DualRangeSlider({
         {/* Max Thumb (hình tròn kéo 2) */}
         <div
           role="slider"
-          aria-valuenow={maxValue}
+          aria-valuemin={min}
+          aria-valuemax={max}
+          aria-valuenow={clampedMaxVal}
+          aria-disabled={disabled}
           aria-label="Hình tròn chọn ngưỡng tối đa"
           onPointerDown={handlePointerDown('max')}
-          className="absolute size-6 -translate-x-1/2 rounded-full bg-white border-2 border-emerald-600 shadow-md cursor-grab active:cursor-grabbing hover:scale-125 transition-transform flex items-center justify-center z-20"
+          className={`absolute size-6 -translate-x-1/2 rounded-full bg-white border-2 border-emerald-600 shadow-md transition-transform flex items-center justify-center z-20 ${
+            disabled
+              ? 'cursor-not-allowed'
+              : 'cursor-grab active:cursor-grabbing hover:scale-125'
+          }`}
           style={{ left: `${maxPercent}%` }}
         >
           <div className="size-2 rounded-full bg-emerald-600" />
@@ -592,11 +642,12 @@ function DualRangeSlider({
       </div>
 
       <div className="flex justify-between text-[10px] text-slate-400 font-medium px-0.5">
-        <span>0{unit}</span>
-        <span>25{unit}</span>
-        <span>50{unit}</span>
-        <span>75{unit}</span>
-        <span>100{unit}</span>
+        {ticks.map((tick, idx) => (
+          <span key={idx}>
+            {tick}
+            {unit}
+          </span>
+        ))}
       </div>
     </div>
   )
@@ -1627,6 +1678,7 @@ const FIELD_LABELS: Record<string, string> = {
   assetId: 'Thuộc cây / Khu vườn',
   online: 'Trạng thái hoạt động',
   pumpState: 'Trạng thái máy bơm',
+  pumpStartedAt: 'Thời điểm bắt đầu bật bơm',
   lastSeenAt: 'Hoạt động lần cuối',
   startedAt: 'Thời gian bắt đầu tưới',
   endedAt: 'Thời gian kết thúc tưới',
@@ -1634,8 +1686,14 @@ const FIELD_LABELS: Record<string, string> = {
   liters: 'Lượng nước tiêu thụ (Lít)',
   createdAt: 'Ngày tạo',
   flow_rate_lpm: 'Lưu lượng bơm (Lít/phút)',
+  safe_min_temperature: 'Nhiệt độ tối thiểu cảnh báo (°C)',
+  safe_max_temperature: 'Nhiệt độ tối đa cảnh báo (°C)',
+  safe_min_humidity: 'Độ ẩm không khí tối thiểu cảnh báo (%)',
+  safe_max_humidity: 'Độ ẩm không khí tối đa cảnh báo (%)',
   safe_min_soil_humidity: 'Độ ẩm đất tối thiểu an toàn (%)',
   safe_max_soil_humidity: 'Độ ẩm đất tối đa an toàn (%)',
+  safe_min_water_level: 'Mực nước bể tối thiểu an toàn (%)',
+  safe_max_water_level: 'Mực nước bể tối đa an toàn (%)',
   firmware_version: 'Phiên bản Firmware',
   timestamp: 'Thời gian nhận dữ liệu',
   temperature: 'Nhiệt độ (°C)',
@@ -1995,19 +2053,40 @@ export default function Page() {
   const [selectedDashboardAssetId, setSelectedDashboardAssetId] = useState<string>('')
   const selectedDashboardAssetIdRef = useRef<string>(selectedDashboardAssetId)
   const devicesRef = useRef<DeviceItem[]>(devices)
-  const [pumpStartTime, setPumpStartTime] = useState<number | null>(null)
-  const [waitingFirstTelemetry, setWaitingFirstTelemetry] = useState(false)
-  const [elapsedSeconds, setElapsedSeconds] = useState(0)
-  const waitingFirstTelemetryRef = useRef(false)
-  const pumpStartTimeRef = useRef<number | null>(null)
+  const [pumpStartedAtByDevice, setPumpStartedAtByDevice] = useState<
+    Record<string, string | null>
+  >({})
 
-  // Settings view states (cấu hình Attribute ngưỡng an toàn)
+  // Settings view states (cấu hình Attribute ngưỡng cảnh báo & an toàn)
+  // Nhiệt độ: 10°C – 40°C
+  const [settingTempMin, setSettingTempMin] = useState<number>(18)
+  const [settingTempMax, setSettingTempMax] = useState<number>(35)
+  // Độ ẩm không khí: 25% – 85%
+  const [settingHumidityMin, setSettingHumidityMin] = useState<number>(40)
+  const [settingHumidityMax, setSettingHumidityMax] = useState<number>(75)
+  // Độ ẩm đất: 25% – 85%
   const [settingSoilMin, setSettingSoilMin] = useState<number>(30)
   const [settingSoilMax, setSettingSoilMax] = useState<number>(70)
+  // Mực nước bể chứa: 10% – 100%
   const [settingWaterMin, setSettingWaterMin] = useState<number>(20)
   const [settingWaterMax, setSettingWaterMax] = useState<number>(95)
   const [savingSettings, setSavingSettings] = useState<boolean>(false)
   const [settingsSaveMsg, setSettingsSaveMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+
+  const clampPair = (
+    rawMin: number | undefined,
+    rawMax: number | undefined,
+    defaultMin: number,
+    defaultMax: number,
+    minLimit: number,
+    maxLimit: number,
+  ): [number, number] => {
+    const validMin = Number.isFinite(rawMin) ? Number(rawMin) : defaultMin
+    const validMax = Number.isFinite(rawMax) ? Number(rawMax) : defaultMax
+    const boundedMin = Math.max(minLimit, Math.min(maxLimit, validMin))
+    const boundedMax = Math.max(boundedMin, Math.min(maxLimit, validMax))
+    return [boundedMin, boundedMax]
+  }
 
   useEffect(() => {
     selectedDashboardAssetIdRef.current = selectedDashboardAssetId
@@ -2021,33 +2100,85 @@ export default function Page() {
   // (chỉ chạy lại khi giá trị attribute thay đổi, không chạy khi trạng thái online cập nhật real-time)
   const attributeSourceKey = useMemo(() => {
     const devWithAttr = devices.find(
-      (d) => d.attributes && typeof d.attributes.safe_min_soil_humidity === 'number'
+      (d) =>
+        d.attributes &&
+        (typeof d.attributes.safe_min_soil_humidity === 'number' ||
+          typeof d.attributes.safe_min_water_level === 'number' ||
+          typeof d.attributes.safe_min_temperature === 'number' ||
+          typeof d.attributes.safe_min_humidity === 'number')
     )
     const attr = devWithAttr?.attributes
     return attr
-      ? [attr.safe_min_soil_humidity, attr.safe_max_soil_humidity, attr.safe_min_water_level, attr.safe_max_water_level].join('|')
+      ? [
+          attr.safe_min_temperature,
+          attr.safe_max_temperature,
+          attr.safe_min_humidity,
+          attr.safe_max_humidity,
+          attr.safe_min_soil_humidity,
+          attr.safe_max_soil_humidity,
+          attr.safe_min_water_level,
+          attr.safe_max_water_level,
+        ].join('|')
       : ''
   }, [devices])
 
   useEffect(() => {
     if (!attributeSourceKey) return
-    const [soilMin, soilMax, waterMin, waterMax] = attributeSourceKey.split('|').map((v) => (v === '' ? NaN : Number(v)))
-    if (Number.isFinite(soilMin)) setSettingSoilMin(soilMin)
-    if (Number.isFinite(soilMax)) setSettingSoilMax(soilMax)
-    if (Number.isFinite(waterMin)) setSettingWaterMin(waterMin)
-    if (Number.isFinite(waterMax)) setSettingWaterMax(waterMax)
+    const [tempMin, tempMax, humMin, humMax, soilMin, soilMax, waterMin, waterMax] = attributeSourceKey
+      .split('|')
+      .map((v) => (v === '' ? NaN : Number(v)))
+
+    const [cTempMin, cTempMax] = clampPair(tempMin, tempMax, 18, 35, 10, 40)
+    const [cHumMin, cHumMax] = clampPair(humMin, humMax, 40, 75, 25, 85)
+    const [cSoilMin, cSoilMax] = clampPair(soilMin, soilMax, 30, 70, 25, 85)
+    const [cWaterMin, cWaterMax] = clampPair(waterMin, waterMax, 20, 95, 10, 100)
+
+    setSettingTempMin(cTempMin)
+    setSettingTempMax(cTempMax)
+    setSettingHumidityMin(cHumMin)
+    setSettingHumidityMax(cHumMax)
+    setSettingSoilMin(cSoilMin)
+    setSettingSoilMax(cSoilMax)
+    setSettingWaterMin(cWaterMin)
+    setSettingWaterMax(cWaterMax)
   }, [attributeSourceKey])
 
-  // Lưu cấu hình Attribute cho toàn bộ attribute/device vào DB
+  // Lưu cấu hình Attribute cho toàn bộ attribute/device vào DB (Chỉ Admin)
   const handleSaveAttributes = async () => {
+    if (!user || user.role !== 'admin') {
+      setSettingsSaveMsg({
+        type: 'error',
+        text: 'Chỉ Quản trị viên (Admin) mới được phép cấu hình các ngưỡng an toàn và cảnh báo!',
+      })
+      return
+    }
+
     setSavingSettings(true)
     setSettingsSaveMsg(null)
     try {
+      const [cTempMin, cTempMax] = clampPair(settingTempMin, settingTempMax, 18, 35, 10, 40)
+      const [cHumMin, cHumMax] = clampPair(settingHumidityMin, settingHumidityMax, 40, 75, 25, 85)
+      const [cSoilMin, cSoilMax] = clampPair(settingSoilMin, settingSoilMax, 30, 70, 25, 85)
+      const [cWaterMin, cWaterMax] = clampPair(settingWaterMin, settingWaterMax, 20, 95, 10, 100)
+
+      setSettingTempMin(cTempMin)
+      setSettingTempMax(cTempMax)
+      setSettingHumidityMin(cHumMin)
+      setSettingHumidityMax(cHumMax)
+      setSettingSoilMin(cSoilMin)
+      setSettingSoilMax(cSoilMax)
+      setSettingWaterMin(cWaterMin)
+      setSettingWaterMax(cWaterMax)
+
       const payload = {
-        safe_min_soil_humidity: settingSoilMin,
-        safe_max_soil_humidity: settingSoilMax,
-        safe_min_water_level: settingWaterMin,
-        safe_max_water_level: settingWaterMax,
+        safe_min_temperature: cTempMin,
+        safe_max_temperature: cTempMax,
+        safe_min_humidity: cHumMin,
+        safe_max_humidity: cHumMax,
+        safe_min_soil_humidity: cSoilMin,
+        safe_max_soil_humidity: cSoilMax,
+        safe_min_water_level: cWaterMin,
+        safe_max_water_level: cWaterMax,
       }
 
       // 1. Thử gửi tới API cập nhật toàn bộ: PUT /api/devices/attributes/all
@@ -2156,30 +2287,7 @@ export default function Page() {
   }, [router])
 
   // Định dạng thời gian trôi qua (hh:mm:ss hoặc mm:ss)
-  const formatDuration = (totalSeconds: number): string => {
-    const hrs = Math.floor(totalSeconds / 3600)
-    const mins = Math.floor((totalSeconds % 3600) / 60)
-    const secs = totalSeconds % 60
-    if (hrs > 0) {
-      return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
-    }
-    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
-  }
 
-  // Đếm thời gian khi máy bơm đã bật và đã nhận bản tin telemetry đầu tiên
-  useEffect(() => {
-    if (!pumpOn || pumpStartTime === null) {
-      return
-    }
-
-    const interval = setInterval(() => {
-      const now = Date.now()
-      const diffSec = Math.max(0, Math.floor((now - pumpStartTime) / 1000))
-      setElapsedSeconds(diffSec)
-    }, 1000)
-
-    return () => clearInterval(interval)
-  }, [pumpOn, pumpStartTime])
 
   const [historyLoading, setHistoryLoading] = useState<boolean>(false)
 
@@ -2283,9 +2391,17 @@ export default function Page() {
       return
     }
 
-    // Có thiết bị tương ứng (1 - 1) -> nạp telemetry của device này
-    if (matchedDev.pumpState) {
-      setPumpOn(matchedDev.pumpState === 'ON')
+    // Có thiết bị tương ứng (1 - 1) -> đồng bộ trạng thái bơm và thời điểm bắt đầu của cây này
+    const isMatchedPumpOn =
+      pumpStatesByDevice[matchedDev._id] !== undefined
+        ? Boolean(pumpStatesByDevice[matchedDev._id])
+        : matchedDev.pumpState === 'ON'
+    setPumpOn(isMatchedPumpOn)
+    if (matchedDev.pumpStartedAt && !pumpStartedAtByDevice[matchedDev._id]) {
+      setPumpStartedAtByDevice((prev) => ({
+        ...prev,
+        [matchedDev._id]: matchedDev.pumpStartedAt ?? null,
+      }))
     }
 
     try {
@@ -2312,13 +2428,6 @@ export default function Page() {
           }))
         setTelemetryHistory(chartData)
 
-        if (waitingFirstTelemetryRef.current && pumpStartTimeRef.current === null) {
-          waitingFirstTelemetryRef.current = false
-          setWaitingFirstTelemetry(false)
-          const now = Date.now()
-          setPumpStartTime(now)
-          pumpStartTimeRef.current = now
-        }
       } else {
         // Thiết bị chưa có bản ghi telemetry nào -> placeholder "--"
         setLatestTelemetry({
@@ -2505,6 +2614,12 @@ export default function Page() {
           devList.map((device) => [device._id, device.pumpState === 'ON']),
         ),
       }))
+      setPumpStartedAtByDevice((prev) => ({
+        ...prev,
+        ...Object.fromEntries(
+          devList.map((device) => [device._id, device.pumpStartedAt ?? null]),
+        ),
+      }))
 
       const telemetryEntries = await Promise.all(
         devList.map(async (device) => {
@@ -2680,22 +2795,31 @@ export default function Page() {
               water_level: msg.data.water_level,
             }
             setTelemetryLogs((prev) => [newLogDoc, ...prev.slice(0, 499)])
-
-            // Khi bật toggle, thời gian được tính từ lúc nhận telemetry đầu tiên sau khi bật toggle
-            if (targetDeviceId && msg.deviceId === targetDeviceId && waitingFirstTelemetryRef.current) {
-              waitingFirstTelemetryRef.current = false
-              setWaitingFirstTelemetry(false)
-              const now = Date.now()
-              setPumpStartTime(now)
-              pumpStartTimeRef.current = now
-              setElapsedSeconds(0)
-            }
           } else if (msg.type === 'PUMP_STATE') {
             const pumpStateOn = msg.data?.state === 'ON'
+            const startedAtIso = pumpStateOn
+              ? (msg.data?.pumpStartedAt ?? new Date().toISOString())
+              : null
+
             setPumpStatesByDevice((prev) => ({
               ...prev,
               [msg.deviceId]: pumpStateOn,
             }))
+            setPumpStartedAtByDevice((prev) => ({
+              ...prev,
+              [msg.deviceId]: startedAtIso,
+            }))
+            setDevices((prev) =>
+              prev.map((d) =>
+                d._id === msg.deviceId
+                  ? {
+                      ...d,
+                      pumpState: pumpStateOn ? 'ON' : 'OFF',
+                      pumpStartedAt: startedAtIso,
+                    }
+                  : d,
+              ),
+            )
 
             const currentAssetId = selectedDashboardAssetIdRef.current
             const devList = devicesRef.current
@@ -2706,17 +2830,9 @@ export default function Page() {
             const targetDeviceId = matchedDev ? matchedDev._id : null
 
             if (targetDeviceId && msg.deviceId === targetDeviceId) {
-              const isTurnedOn = msg.data?.state === 'ON'
-              setPumpOn(isTurnedOn)
-              if (!isTurnedOn) {
-                waitingFirstTelemetryRef.current = false
-                setWaitingFirstTelemetry(false)
-                setPumpStartTime(null)
-                pumpStartTimeRef.current = null
-                setElapsedSeconds(0)
-                refreshWateringHistory()
-              }
+              setPumpOn(pumpStateOn)
             }
+            void refreshWateringHistory()
           }
         } catch (e) {
           console.error('Lỗi phân tích WebSocket message:', e)
@@ -2800,51 +2916,78 @@ export default function Page() {
         return
       }
       if (assetId !== selectedDashboardAssetIdRef.current) {
-        // Chuyển Dashboard sang cây đó để đồng bộ trạng thái và bộ đếm thời gian
+        // Chuyển Dashboard sang cây đó để đồng bộ trạng thái và thời điểm bắt đầu tưới
         setSelectedDashboardAssetId(assetId)
         selectedDashboardAssetIdRef.current = assetId
         void loadTelemetryForAsset(assetId, devList)
       }
     }
 
-    setPumpOn(checked)
     const currentAssetId = selectedDashboardAssetIdRef.current
     const matchedDev = findDeviceOfAsset(currentAssetId)
     const targetDevId = matchedDev ? matchedDev._id : (devList.length > 0 ? devList[0]._id : '')
+    const prevStartedAt = targetDevId
+      ? (pumpStartedAtByDevice[targetDevId] ?? matchedDev?.pumpStartedAt ?? null)
+      : null
+    const optimisticStartedAt = checked ? new Date().toISOString() : null
+
+    setPumpOn(checked)
     if (targetDevId) {
       setPumpStatesByDevice((prev) => ({
         ...prev,
         [targetDevId]: checked,
       }))
-    }
-
-    if (checked) {
-      // Bật toggle: Đánh dấu chờ telemetry đầu tiên để tính giờ
-      waitingFirstTelemetryRef.current = true
-      setWaitingFirstTelemetry(true)
-      setPumpStartTime(null)
-      pumpStartTimeRef.current = null
-      setElapsedSeconds(0)
-    } else {
-      // Tắt toggle: Dừng đếm giờ và tải lại dữ liệu bảng Nhật ký tưới nước
-      waitingFirstTelemetryRef.current = false
-      setWaitingFirstTelemetry(false)
-      setPumpStartTime(null)
-      pumpStartTimeRef.current = null
-      setElapsedSeconds(0)
-
-      // Render lại dữ liệu table Nhật ký tưới nước
-      await refreshWateringHistory()
-      setTimeout(() => refreshWateringHistory(), 800)
-      setTimeout(() => refreshWateringHistory(), 1800)
+      setPumpStartedAtByDevice((prev) => ({
+        ...prev,
+        [targetDevId]: optimisticStartedAt,
+      }))
+      setDevices((prev) =>
+        prev.map((d) =>
+          d._id === targetDevId
+            ? {
+                ...d,
+                pumpState: checked ? 'ON' : 'OFF',
+                pumpStartedAt: optimisticStartedAt,
+              }
+            : d,
+        ),
+      )
     }
 
     if (targetDevId) {
       try {
-        await apiRequest(`/api/devices/${targetDevId}/command`, {
+        const res = await apiRequest<{
+          pumpState?: 'ON' | 'OFF'
+          pumpStartedAt?: string | null
+        }>(`/api/devices/${targetDevId}/command`, {
           method: 'POST',
           body: JSON.stringify({ action: 'WATER', state: checked ? 'ON' : 'OFF' }),
         })
+
+        const confirmedStartedAt = checked
+          ? (res?.pumpStartedAt ?? optimisticStartedAt)
+          : null
+
+        setPumpStartedAtByDevice((prev) => ({
+          ...prev,
+          [targetDevId]: confirmedStartedAt,
+        }))
+        setDevices((prev) =>
+          prev.map((d) =>
+            d._id === targetDevId
+              ? {
+                  ...d,
+                  pumpState: checked ? 'ON' : 'OFF',
+                  pumpStartedAt: confirmedStartedAt,
+                }
+              : d,
+          ),
+        )
+
+        await refreshWateringHistory()
+        if (!checked) {
+          setTimeout(() => refreshWateringHistory(), 800)
+        }
       } catch (err: any) {
         console.error('Lỗi gửi lệnh bơm:', err)
         window.alert(err?.message || 'Không gửi được lệnh điều khiển máy bơm')
@@ -2855,11 +2998,22 @@ export default function Page() {
             ...prev,
             [targetDevId]: !checked,
           }))
+          setPumpStartedAtByDevice((prev) => ({
+            ...prev,
+            [targetDevId]: prevStartedAt,
+          }))
+          setDevices((prev) =>
+            prev.map((d) =>
+              d._id === targetDevId
+                ? {
+                    ...d,
+                    pumpState: !checked ? 'ON' : 'OFF',
+                    pumpStartedAt: prevStartedAt,
+                  }
+                : d,
+            ),
+          )
         }
-        waitingFirstTelemetryRef.current = false
-        setWaitingFirstTelemetry(false)
-        setPumpStartTime(null)
-        pumpStartTimeRef.current = null
       }
     }
   }
@@ -2874,6 +3028,19 @@ export default function Page() {
     setNotificationsOpen(false)
     router.replace('/login')
   }
+
+  const selectedDashboardAsset = assets.find(
+    (asset) => String(asset._id) === String(selectedDashboardAssetId),
+  )
+  const selectedDashboardDevice = devices.find((device) => {
+    const assetId = typeof device.assetId === 'object' && device.assetId !== null
+      ? (device.assetId as any)._id
+      : device.assetId
+    return String(assetId) === String(selectedDashboardAssetId)
+  })
+  const selectedPumpStartedAt = selectedDashboardDevice
+    ? pumpStartedAtByDevice[selectedDashboardDevice._id] ?? selectedDashboardDevice.pumpStartedAt ?? null
+    : null
 
   if (!authChecked) {
     return (
@@ -2992,7 +3159,7 @@ export default function Page() {
               </Button>
 
               {notificationsOpen && user && (
-                <div className="absolute right-0 top-11 z-50 w-[min(92vw,380px)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl">
+                <div className="absolute right-0 top-11 z-50 w-[min(84vw,320px)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl">
                   <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
                     <div>
                       <p className="text-sm font-semibold text-slate-900">Thông báo</p>
@@ -3077,9 +3244,8 @@ export default function Page() {
               onClick={() =>
                 user ? setView('profile') : router.replace('/login')
               }
-              className="gap-2 text-black font-medium"
-            >
-              <UserRound className="size-4" /> {user ? user.username : 'Tài khoản'}
+              className="text-black font-medium"
+            >{user ? user.username : 'Tài khoản'}
             </Button>
           </div>
         </header>
@@ -3139,10 +3305,38 @@ export default function Page() {
                   return String(dAssetId) === String(selectedDashboardAssetId)
                 })
                 const attr = matchedDev?.attributes
-                const minSoil = typeof attr?.safe_min_soil_humidity === 'number' ? attr.safe_min_soil_humidity : 30
-                const maxSoil = typeof attr?.safe_max_soil_humidity === 'number' ? attr.safe_max_soil_humidity : 70
-                const minWater = typeof attr?.safe_min_water_level === 'number' ? attr.safe_min_water_level : 20
-                const maxWater = typeof attr?.safe_max_water_level === 'number' ? attr.safe_max_water_level : 95
+                const [minTemp, maxTemp] = clampPair(
+                  attr?.safe_min_temperature,
+                  attr?.safe_max_temperature,
+                  18,
+                  35,
+                  10,
+                  40,
+                )
+                const [minHum, maxHum] = clampPair(
+                  attr?.safe_min_humidity,
+                  attr?.safe_max_humidity,
+                  40,
+                  75,
+                  25,
+                  85,
+                )
+                const [minSoil, maxSoil] = clampPair(
+                  attr?.safe_min_soil_humidity,
+                  attr?.safe_max_soil_humidity,
+                  30,
+                  70,
+                  25,
+                  85,
+                )
+                const [minWater, maxWater] = clampPair(
+                  attr?.safe_min_water_level,
+                  attr?.safe_max_water_level,
+                  20,
+                  95,
+                  10,
+                  100,
+                )
 
                 return (
                   <div className="mb-8 grid grid-cols-4 gap-2">
@@ -3151,14 +3345,22 @@ export default function Page() {
                       label="Nhiệt độ"
                       value={latestTelemetry.temperature !== null && latestTelemetry.temperature !== undefined ? `${latestTelemetry.temperature}` : '--'}
                       unit={latestTelemetry.temperature !== null && latestTelemetry.temperature !== undefined ? '°C' : ''}
-                      detail={latestTelemetry.temperature !== null && latestTelemetry.temperature !== undefined ? 'Cập nhật từ cảm biến' : 'Chưa có dữ liệu'}
+                      detail={
+                        matchedDev
+                          ? `Ngưỡng cảnh báo: ${minTemp}°C – ${maxTemp}°C`
+                          : 'Chưa có thiết bị liên kết'
+                      }
                     />
                     <Metric
                       icon={Wind}
                       label="Độ ẩm không khí"
                       value={latestTelemetry.humidity !== null && latestTelemetry.humidity !== undefined ? `${latestTelemetry.humidity}` : '--'}
                       unit={latestTelemetry.humidity !== null && latestTelemetry.humidity !== undefined ? '%' : ''}
-                      detail={latestTelemetry.humidity !== null && latestTelemetry.humidity !== undefined ? 'Mức chuẩn 45–65%' : 'Chưa có dữ liệu'}
+                      detail={
+                        matchedDev
+                          ? `Ngưỡng cảnh báo: ${minHum}% – ${maxHum}%`
+                          : 'Chưa có thiết bị liên kết'
+                      }
                     />
                     <Metric
                       icon={Sprout}
@@ -3239,24 +3441,31 @@ export default function Page() {
                     <span className="text-sm font-semibold text-black">
                       Máy bơm nước:{' '}
                       {pumpOn ? (
-                        <span className="text-emerald-700 font-bold">
-                          ĐÃ BẬT {pumpStartTime !== null ? formatDuration(elapsedSeconds) : '00:00'}
-                        </span>
+                        <span className="text-emerald-700 font-bold">ĐÃ BẬT</span>
                       ) : (
                         <span className="text-slate-600">ĐANG TẮT</span>
                       )}
                     </span>
                     <span className="text-[11px] text-slate-500">
-                      {user && user.turnOnPump === false ? (
-                        <span className="text-rose-600 font-medium inline-flex items-center gap-1">
-                          <ShieldAlert className="size-3" /> Chưa được cấp quyền bật máy bơm
-                        </span>
-                      ) : pumpOn ? (
-                        pumpStartTime !== null
-                          ? 'Thời gian tính từ lúc nhận telemetry đầu tiên'
-                          : 'Đang chờ nhận telemetry đầu tiên để tính giờ...'
+                      {pumpOn ? (
+                        selectedPumpStartedAt ? (
+                          <>
+                            Bắt đầu bật{selectedDashboardAsset ? ` (${selectedDashboardAsset.name})` : ''}:{' '}
+                            <strong className="text-emerald-800">
+                              {new Date(selectedPumpStartedAt).toLocaleString('vi-VN')}
+                            </strong>
+                          </>
+                        ) : (
+                          'Đang ghi nhận thời điểm bắt đầu...'
+                        )
                       ) : (
                         'Gửi lệnh điều khiển bật/tắt thiết bị'
+                      )}
+                      {user && user.turnOnPump === false && (
+                        <span className="mt-1 block text-rose-600 font-medium">
+                          <ShieldAlert className="mr-1 inline size-3" />
+                          Chưa được cấp quyền bật máy bơm
+                        </span>
                       )}
                     </span>
                   </div>
@@ -3515,10 +3724,6 @@ export default function Page() {
                       )}
                     </div>
                   </div>
-                  <div>
-                    <Label>Múi giờ</Label>
-                    <Input defaultValue="UTC+07:00 (Việt Nam)" className="text-black" />
-                  </div>
                 </CardContent>
               </Card>
             </>
@@ -3526,8 +3731,34 @@ export default function Page() {
 
           {view === 'settings' && (
             <>
-              <SectionHeading eyebrow="Cấu hình hệ thống" title="Cài đặt ngưỡng an toàn cảm biến & thiết bị" />
+              <SectionHeading eyebrow="Cấu hình hệ thống" title="Cài đặt ngưỡng an toàn & cảnh báo cảm biến" />
               <div className="grid gap-6 max-w-4xl">
+                {user?.role === 'admin' ? (
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50/90 px-4 py-2.5 text-xs text-emerald-900 shadow-2xs">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="size-4 text-emerald-600 shrink-0" />
+                      <span>
+                        Bạn đang thao tác với quyền <strong>Quản trị viên (Admin)</strong> — Có toàn quyền cấu hình min/max độ ẩm đất, mực nước bể chứa, nhiệt độ và độ ẩm không khí.
+                      </span>
+                    </div>
+                    <Badge className="w-fit bg-emerald-700 hover:bg-emerald-700 text-white text-[11px] px-2 py-0.5 font-semibold">
+                      Admin Mode
+                    </Badge>
+                  </div>
+                ) : (
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50/90 px-4 py-2.5 text-xs text-amber-900 shadow-2xs">
+                    <div className="flex items-center gap-2">
+                      <ShieldAlert className="size-4 text-amber-600 shrink-0" />
+                      <span>
+                        <strong>Chế độ chỉ xem:</strong> Chỉ tài khoản <strong>Quản trị viên (Admin)</strong> mới được phép cấu hình ngưỡng min/max độ ẩm đất, mực nước bể chứa và ngưỡng cảnh báo.
+                      </span>
+                    </div>
+                    <Badge variant="outline" className="w-fit border-amber-300 bg-amber-100 text-amber-900 text-[11px] px-2 py-0.5 font-medium">
+                      Chỉ Admin cấu hình
+                    </Badge>
+                  </div>
+                )}
+
                 {/* Card Cấu hình Ngưỡng Thuộc tính (Attribute) cho Cây & Thiết bị */}
                 <Card className="border-emerald-100/90 bg-white shadow-xs">
                   <CardHeader className="border-b border-emerald-100/70 pb-4">
@@ -3535,10 +3766,10 @@ export default function Page() {
                       <div>
                         <CardTitle className="text-base text-slate-900 font-semibold flex items-center gap-2">
                           <Sliders className="size-5 text-emerald-600" />
-                          Cài đặt thuộc tính an toàn (Attribute)
+                          Cài đặt ngưỡng cảnh báo & thuộc tính an toàn (Attribute)
                         </CardTitle>
                         <p className="text-xs text-slate-500 mt-1">
-                          Cấu hình ngưỡng độ ẩm đất và mức nước an toàn áp dụng đồng bộ cho toàn bộ cây trồng & thiết bị.
+                          Cấu hình ngưỡng cảnh báo nhiệt độ, độ ẩm không khí, độ ẩm đất và mực nước bể chứa áp dụng đồng bộ cho toàn bộ cây trồng & thiết bị.
                         </p>
                       </div>
 
@@ -3551,17 +3782,87 @@ export default function Page() {
                   </CardHeader>
 
                   <CardContent className="p-6 flex flex-col gap-6">
-                    {/* Thanh bar 1: Ngưỡng độ ẩm đất (Soil Humidity) */}
+                    {/* Thanh bar 1: Ngưỡng cảnh báo Nhiệt độ (10°C – 40°C) */}
+                    <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 flex flex-col gap-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Thermometer className="size-4 text-amber-600" />
+                          <div>
+                            <h4 className="text-sm font-semibold text-slate-900">
+                              Ngưỡng cảnh báo Nhiệt độ (10°C – 40°C)
+                            </h4>
+                            <p className="text-[11px] text-slate-500">
+                              Kéo 2 hình tròn để xác định safe_min_temperature và safe_max_temperature (chỉ trong khoảng 10°C – 40°C)
+                            </p>
+                          </div>
+                        </div>
+                        <span className="text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-md">
+                          {settingTempMin}°C – {settingTempMax}°C
+                        </span>
+                      </div>
+
+                      <DualRangeSlider
+                        min={10}
+                        max={40}
+                        step={1}
+                        minValue={settingTempMin}
+                        maxValue={settingTempMax}
+                        disabled={user?.role !== 'admin'}
+                        onChange={(minVal, maxVal) => {
+                          setSettingTempMin(Math.max(10, Math.min(40, minVal)))
+                          setSettingTempMax(Math.max(10, Math.min(40, maxVal)))
+                        }}
+                        unit="°C"
+                        trackColor="bg-amber-500"
+                      />
+                    </div>
+
+                    {/* Thanh bar 2: Ngưỡng cảnh báo Độ ẩm không khí (25% – 85%) */}
+                    <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 flex flex-col gap-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Wind className="size-4 text-sky-600" />
+                          <div>
+                            <h4 className="text-sm font-semibold text-slate-900">
+                              Ngưỡng cảnh báo Độ ẩm không khí (25% – 85%)
+                            </h4>
+                            <p className="text-[11px] text-slate-500">
+                              Kéo 2 hình tròn để xác định safe_min_humidity và safe_max_humidity (chỉ trong khoảng 25% – 85%)
+                            </p>
+                          </div>
+                        </div>
+                        <span className="text-xs font-bold text-sky-800 bg-sky-50 border border-sky-200 px-2.5 py-1 rounded-md">
+                          {settingHumidityMin}% – {settingHumidityMax}%
+                        </span>
+                      </div>
+
+                      <DualRangeSlider
+                        min={25}
+                        max={85}
+                        step={1}
+                        minValue={settingHumidityMin}
+                        maxValue={settingHumidityMax}
+                        disabled={user?.role !== 'admin'}
+                        onChange={(minVal, maxVal) => {
+                          setSettingHumidityMin(Math.max(25, Math.min(85, minVal)))
+                          setSettingHumidityMax(Math.max(25, Math.min(85, maxVal)))
+                        }}
+                        unit="%"
+                        trackColor="bg-sky-500"
+                      />
+                    </div>
+
+                    {/* Thanh bar 3: Ngưỡng độ ẩm đất (25% – 85%) */}
                     <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 flex flex-col gap-3">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <Sprout className="size-4 text-emerald-600" />
                           <div>
                             <h4 className="text-sm font-semibold text-slate-900">
-                              Độ ẩm đất (Soil Moisture Threshold)
+                              Độ ẩm đất (25% – 85%)
                             </h4>
                             <p className="text-[11px] text-slate-500">
-                              Kéo 2 hình tròn để xác định safe_min_soil_humidity và safe_max_soil_humidity
+                              Kéo 2 hình tròn để xác định safe_min_soil_humidity và safe_max_soil_humidity (giới hạn từ 25% đến 85%)
                             </p>
                           </div>
                         </div>
@@ -3571,31 +3872,32 @@ export default function Page() {
                       </div>
 
                       <DualRangeSlider
-                        min={0}
-                        max={100}
+                        min={25}
+                        max={85}
                         step={1}
                         minValue={settingSoilMin}
                         maxValue={settingSoilMax}
+                        disabled={user?.role !== 'admin'}
                         onChange={(minVal, maxVal) => {
-                          setSettingSoilMin(minVal)
-                          setSettingSoilMax(maxVal)
+                          setSettingSoilMin(Math.max(25, Math.min(85, minVal)))
+                          setSettingSoilMax(Math.max(25, Math.min(85, maxVal)))
                         }}
                         unit="%"
                         trackColor="bg-emerald-500"
                       />
                     </div>
 
-                    {/* Thanh bar 2: Ngưỡng mức nước bể chứa (Water Level) */}
+                    {/* Thanh bar 4: Ngưỡng mức nước bể chứa (10% – 100%) */}
                     <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 flex flex-col gap-3">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <Waves className="size-4 text-cyan-600" />
                           <div>
                             <h4 className="text-sm font-semibold text-slate-900">
-                              Mức nước bể chứa (Water Level Threshold)
+                              Mực nước bể chứa (10% – 100%)
                             </h4>
                             <p className="text-[11px] text-slate-500">
-                              Kéo 2 hình tròn để xác định safe_min_water_level và safe_max_water_level
+                              Kéo 2 hình tròn để xác định safe_min_water_level và safe_max_water_level (giới hạn từ 10% đến 100%)
                             </p>
                           </div>
                         </div>
@@ -3605,14 +3907,15 @@ export default function Page() {
                       </div>
 
                       <DualRangeSlider
-                        min={0}
+                        min={10}
                         max={100}
                         step={1}
                         minValue={settingWaterMin}
                         maxValue={settingWaterMax}
+                        disabled={user?.role !== 'admin'}
                         onChange={(minVal, maxVal) => {
-                          setSettingWaterMin(minVal)
-                          setSettingWaterMax(maxVal)
+                          setSettingWaterMin(Math.max(10, Math.min(100, minVal)))
+                          setSettingWaterMax(Math.max(10, Math.min(100, maxVal)))
                         }}
                         unit="%"
                         trackColor="bg-cyan-500"
@@ -3632,49 +3935,32 @@ export default function Page() {
                       </div>
                     )}
 
-                    {/* Nút Lưu dữ liệu Attribute */}
+                    {/* Nút Lưu dữ liệu Attribute (Chỉ Admin) */}
                     <div className="flex items-center justify-end gap-3 pt-2">
-                      <Button
-                        onClick={handleSaveAttributes}
-                        disabled={savingSettings}
-                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs px-6 h-9 shadow-xs"
-                      >
-                        {savingSettings ? (
-                          <>
-                            <RefreshCw className="size-3.5 mr-2 animate-spin" />
-                            Đang lưu DB...
-                          </>
-                        ) : (
-                          'Lưu cấu hình cho toàn bộ hệ thống'
-                        )}
-                      </Button>
+                      {user?.role === 'admin' ? (
+                        <Button
+                          onClick={handleSaveAttributes}
+                          disabled={savingSettings}
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs px-6 h-9 shadow-xs"
+                        >
+                          {savingSettings ? (
+                            <>
+                              <RefreshCw className="size-3.5 mr-2 animate-spin" />
+                              Đang lưu DB...
+                            </>
+                          ) : (
+                            'Lưu cấu hình cho toàn bộ hệ thống'
+                          )}
+                        </Button>
+                      ) : (
+                        <div className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 bg-slate-100 border border-slate-200 px-4 py-2 rounded-md cursor-not-allowed select-none">
+                          <Lock className="size-3.5 text-slate-400" />
+                          <span>Chỉ Quản trị viên (Admin) mới được lưu cấu hình</span>
+                        </div>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
-
-                {/* Các cấu hình phụ khác (Làm mới & Đăng xuất) */}
-                {/* <Card className="border-slate-200 bg-white/80 shadow-xs">
-                  <CardContent className="flex flex-col gap-4 p-5">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="font-medium text-sm">Tự động làm mới dữ liệu</p>
-                        <p className="text-xs text-muted-foreground">
-                          Cập nhật telemetry và biểu đồ định kỳ qua WebSocket.
-                        </p>
-                      </div>
-                      <Switch defaultChecked />
-                    </div>
-                    {user && (
-                      <div className="pt-2 border-t border-slate-100 flex justify-between items-center">
-                        <span className="text-xs text-slate-500">Tài khoản: {user.username}</span>
-                        <Button variant="outline" size="sm" className="gap-2 text-red-600 text-xs" onClick={handleLogout}>
-                          <LogOut className="size-3.5" />
-                          Đăng xuất
-                        </Button>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card> */}
               </div>
             </>
           )}

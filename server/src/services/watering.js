@@ -27,13 +27,36 @@ async function checkWaterLevelForPump(deviceId, currentWaterLevel) {
   return { allowed: waterLevel >= minWater, waterLevel, minWater };
 }
 
-// Lich su tuoi duoc ghi theo trang thai do THIET BI xac nhan, khong theo lenh da gui.
+// Lich su tuoi duoc ghi theo trang thai may bom va luu thoi diem bat dau (tuong ung voi cay duoc tuoi).
 async function onPumpState(deviceId, state) {
   const device = await Device.findById(deviceId);
-  if (!device || device.pumpState === state) return;
+  if (!device) return null;
+  if (device.pumpState === state) {
+    if (state === 'ON' && !device.pumpStartedAt) {
+      const openEvent = await WateringEvent.findOne({ deviceId, endedAt: null }).sort({ startedAt: -1 });
+      device.pumpStartedAt = openEvent?.startedAt || new Date();
+      await device.save();
+      if (!openEvent) {
+        await WateringEvent.create({
+          deviceId,
+          assetId: device.assetId,
+          startedAt: device.pumpStartedAt,
+        });
+      }
+    } else if (state === 'OFF' && device.pumpStartedAt) {
+      device.pumpStartedAt = null;
+      await device.save();
+    }
+    return {
+      pumpState: device.pumpState,
+      pumpStartedAt: device.pumpStartedAt,
+      assetId: device.assetId,
+    };
+  }
 
   const now = new Date();
   device.pumpState = state;
+  device.pumpStartedAt = state === 'ON' ? now : null;
   await device.save();
 
   if (state === 'ON') {
@@ -49,7 +72,44 @@ async function onPumpState(deviceId, state) {
       await event.save();
     }
   }
-  broadcast(deviceId, 'PUMP_STATE', { state, timestamp: now });
+  broadcast(deviceId, 'PUMP_STATE', {
+    state,
+    timestamp: now,
+    pumpStartedAt: device.pumpStartedAt,
+    assetId: device.assetId ? String(device.assetId) : null,
+  });
+  return {
+    pumpState: device.pumpState,
+    pumpStartedAt: device.pumpStartedAt,
+    assetId: device.assetId,
+  };
 }
 
-module.exports = { onPumpState, checkWaterLevelForPump };
+async function backfillPumpStartedAt() {
+  const devices = await Device.find({
+    pumpState: 'ON',
+    $or: [{ pumpStartedAt: null }, { pumpStartedAt: { $exists: false } }],
+  }).select('_id assetId');
+
+  for (const device of devices) {
+    let event = await WateringEvent.findOne({
+      deviceId: device._id,
+      endedAt: null,
+    }).sort({ startedAt: -1 });
+    if (!event) {
+      event = await WateringEvent.create({
+        deviceId: device._id,
+        assetId: device.assetId || null,
+        startedAt: new Date(),
+      });
+    }
+    if (event?.startedAt) {
+      await Device.updateOne(
+        { _id: device._id },
+        { $set: { pumpStartedAt: event.startedAt } }
+      );
+    }
+  }
+}
+
+module.exports = { onPumpState, checkWaterLevelForPump, backfillPumpStartedAt };

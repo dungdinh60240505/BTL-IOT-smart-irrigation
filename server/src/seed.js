@@ -21,6 +21,10 @@ const Attribute = require('./models/Attribute');
     { deviceId: 'esp32_01' },
     {
       $setOnInsert: {
+        safe_min_temperature: 18,
+        safe_max_temperature: 35,
+        safe_min_humidity: 40,
+        safe_max_humidity: 75,
         safe_min_soil_humidity: 30,
         safe_max_soil_humidity: 70,
         safe_min_water_level: 20,
